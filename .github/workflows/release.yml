@@ -19,7 +19,7 @@ jobs:
         include:
           - os: windows-latest
             # FIXED: Use FFmpeg 7.1 Stable to prevent 'nvcuda.dll' errors on older drivers
-            ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-7.1-essentials_build.zip
+            ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
             exe_ext: .exe
             sep: ';'
             asset_name_suffix: -win64
