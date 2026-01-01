@@ -1,0 +1,99 @@
+name: Build & Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:  # Allows manual triggering from Actions tab
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+            ext: .exe
+            sep: ';'
+            asset_name_suffix: -win64
+          - os: ubuntu-latest
+            ffmpeg_url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+            ext: ''
+            sep: ':'
+            asset_name_suffix: -linux
+          - os: macos-latest
+            ffmpeg_url_mac: https://evermeet.cx/ffmpeg/getrelease/zip
+            ffprobe_url_mac: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+            ext: ''
+            sep: ':'
+            asset_name_suffix: -macos
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      # --- FFmpeg Download Section ---
+
+      - name: Download FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Invoke-WebRequest "${{ matrix.ffmpeg_url }}" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath .
+          Move-Item ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe .
+          Move-Item ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe .
+
+      - name: Download FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget "${{ matrix.ffmpeg_url }}" -O ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz --strip-components=1 --wildcards '*/ffmpeg' '*/ffprobe'
+
+      - name: Download FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -L "${{ matrix.ffmpeg_url_mac }}" -o ffmpeg.zip
+          curl -L "${{ matrix.ffprobe_url_mac }}" -o ffprobe.zip
+          unzip ffmpeg.zip
+          unzip ffprobe.zip
+          chmod +x ffmpeg ffprobe
+
+      # --- Build Section ---
+
+      - name: Build Executables
+        shell: bash
+        run: |
+          # Loop through the 4 script versions
+          for script in 8mb 50mb 100mb 500mb; do
+            echo "Building $script..."
+            
+            # Removed --windowed so users can see the console progress output
+            pyinstaller --clean --onefile \
+              --add-binary "ffmpeg${{ matrix.ext }}${{ matrix.sep }}." \
+              --add-binary "ffprobe${{ matrix.ext }}${{ matrix.sep }}." \
+              --name "${script}${{ matrix.asset_name_suffix }}" \
+              "$script.py"
+          done
+
+      # --- Upload Section ---
+
+      - name: Upload Artifacts (to Actions Run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.os }}
+          path: dist/*
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*
