@@ -60,7 +60,7 @@ def check_nvenc_available() -> bool:
         cmd = [
             ffmpeg_exe,
             "-hide_banner", "-v", "error",
-            "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.1", # Dummy input
+            "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1", # Dummy input
             "-vframes", "1",
             "-c:v", "hevc_nvenc", # Test specifically for HEVC NVENC
             "-f", "null", "-"     # Throw away output
