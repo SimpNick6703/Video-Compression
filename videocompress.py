@@ -49,15 +49,24 @@ def clean_log_file():
             pass
 
 def check_nvenc_available() -> bool:
+    """
+    Checks if NVENC is actually usable by attempting a dummy encoding.
+    Returns True only if hardware is present and working.
+    """
     ffmpeg_exe = get_resource_path("ffmpeg")
     try:
-        subprocess.run(
-            [ffmpeg_exe, "-hide_banner", "-encoders"],
-            capture_output=True, text=True, check=True, timeout=5
-        ).check_returncode()
-        # Use the specific binary for the check output as well
-        output = subprocess.check_output([ffmpeg_exe, "-encoders"], text=True)
-        return "h264_nvenc" in output
+        # Attempt to encode 1 frame of black video using NVENC
+        # If hardware is missing, this will fail with return code != 0
+        cmd = [
+            ffmpeg_exe,
+            "-hide_banner", "-v", "error",
+            "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.1", # Dummy input
+            "-vframes", "1",
+            "-c:v", "h264_nvenc", # Test specifically for H264 NVENC
+            "-f", "null", "-"     # Throw away output
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
     except Exception:
         return False
 
