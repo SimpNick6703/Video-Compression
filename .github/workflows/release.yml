@@ -18,7 +18,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            # Gyan.dev Essentials (Small & Compatible)
+            # FIXED: Use FFmpeg 7.1 Stable to prevent 'nvcuda.dll' errors on older drivers
             ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
             exe_ext: .exe
             sep: ';'
@@ -57,7 +57,7 @@ jobs:
           Invoke-WebRequest "${{ matrix.ffmpeg_url }}" -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath .
           
-          # Find the folder containing 'bin' (Gyan.dev structure varies slightly by version)
+          # Find the folder containing 'bin' (Handles the versioned folder name automatically)
           $binPath = Get-ChildItem -Recurse -Directory -Filter "bin" | Select-Object -First 1
           
           # Move binaries to the root workspace

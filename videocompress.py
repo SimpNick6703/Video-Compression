@@ -60,7 +60,7 @@ def check_nvenc_available() -> bool:
         cmd = [
             ffmpeg_exe,
             "-hide_banner", "-v", "error",
-            "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.1", # Dummy input
+            "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1", # Dummy input
             "-vframes", "1",
             "-c:v", "h264_nvenc", # Test specifically for H264 NVENC
             "-f", "null", "-"     # Throw away output
@@ -154,11 +154,9 @@ def run_ffmpeg_pass(cmd: List[str], duration: Optional[float] = None) -> Tuple[b
                 pass
         
         # 2. Get Current Speed (FPS and Multiplier)
-        current_fps = 0.0
         fps_match = fps_pattern.search(line)
         if fps_match:
-            current_fps = float(fps_match.group(1))
-            progress_info.append(f"Speed: {current_fps:.1f} FPS")
+            progress_info.append(f"Speed: {float(fps_match.group(1)):.1f} FPS")
         
         # 3. Calculate Estimated Time Remaining (ETA) for Pass 2
         is_pass_two = ("-pass" in cmd and "2" in cmd)
@@ -182,8 +180,7 @@ def run_ffmpeg_pass(cmd: List[str], duration: Optional[float] = None) -> Tuple[b
         # 4. Get Bitrate
         bitrate_match = bitrate_pattern.search(line)
         if bitrate_match:
-            bitrate = bitrate_match.group(1)
-            progress_info.append(f"Bitrate: {bitrate} kbits/s")
+            progress_info.append(f"Bitrate: {bitrate_match.group(1)} kbits/s")
         
         if progress_info:
             print(f"\r{' | '.join(progress_info)}", end="")
@@ -201,9 +198,7 @@ def run_ffmpeg_pass(cmd: List[str], duration: Optional[float] = None) -> Tuple[b
 
 def compress_video(input_path: str, output_path: Optional[str] = None, target_size_mb: int = 100) -> Tuple[bool, str]:
     start_time = time.time()
-    success = False
-    result_msg = ""
-    ffmpeg_exe = get_resource_path("ffmpeg")
+    ffmpeg_exe = get_resource_path("ffmpeg") # <--- FIX 5: Get bundled path
     
     # 1. Check/Cleanup before running
     clean_log_file() 
