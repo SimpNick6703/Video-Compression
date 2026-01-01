@@ -14,6 +14,20 @@ LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log
 
 # --- Utility Functions ---
 
+def get_resource_path(filename: str) -> str:
+    """
+    Get absolute path to resource, works for dev and for PyInstaller.
+    Ensures that when the app is frozen (onefile), it looks for ffmpeg/ffprobe
+    inside the temporary folder (_MEIPASS) instead of the system PATH.
+    """
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+        # Append .exe if on Windows and not already present
+        if sys.platform == 'win32' and not filename.lower().endswith('.exe'):
+            filename = f"{filename}.exe"
+        return os.path.join(base_path, filename)
+    return filename
+
 def get_file_size(file_path: str) -> int:
     return os.path.getsize(file_path)
 
@@ -35,24 +49,28 @@ def clean_log_file():
             pass
 
 def check_nvenc_available() -> bool:
+    ffmpeg_exe = get_resource_path("ffmpeg")
     try:
         subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
+            [ffmpeg_exe, "-hide_banner", "-encoders"],
             capture_output=True, text=True, check=True, timeout=5
         ).check_returncode()
-        return "h264_nvenc" in subprocess.getoutput("ffmpeg -encoders")
+        # Use the specific binary for the check output as well
+        output = subprocess.check_output([ffmpeg_exe, "-encoders"], text=True)
+        return "h264_nvenc" in output
     except Exception:
         return False
 
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int]]:
+    ffprobe_exe = get_resource_path("ffprobe")
     try:
-        cmd_fps = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+        cmd_fps = [ffprobe_exe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
         fps_output = subprocess.check_output(cmd_fps, text=True).strip()
         
-        cmd_audio_br = ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+        cmd_audio_br = [ffprobe_exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
         audio_bitrate_output = subprocess.check_output(cmd_audio_br, text=True).strip()
         
-        cmd_duration = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+        cmd_duration = [ffprobe_exe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
         duration_output = subprocess.check_output(cmd_duration, text=True).strip()
         
         if not fps_output or '/' not in fps_output:
@@ -176,6 +194,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     start_time = time.time()
     success = False
     result_msg = ""
+    ffmpeg_exe = get_resource_path("ffmpeg")
     
     # 1. Check/Cleanup before running
     clean_log_file() 
@@ -233,7 +252,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             # --- Pass 1: Analysis (With Progress Parsing) ---
             print("Pass 1/2: Analyzing...")
             pass1_cmd = [
-                "ffmpeg", *base_config_args, 
+                ffmpeg_exe, *base_config_args, 
                 "-pass", "1", 
                 "-loglevel", "error", 
                 "-stats",
@@ -250,7 +269,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             # --- Pass 2: Encoding (With Progress Parsing) ---
             print("Pass 2/2: Encoding...")
             pass2_cmd = [
-                "ffmpeg", *base_config_args,
+                ffmpeg_exe, *base_config_args,
                 "-pass", "2",
                 "-loglevel", "error", # suppress header, keep errors
                 "-stats", # prints progress to stderr
@@ -272,7 +291,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
 
             # --- Single Pass Encoding (With Progress Parsing) ---
             single_pass_cmd = [
-                "ffmpeg", *base_config_args,
+                ffmpeg_exe, *base_config_args,
                 "-y", 
                 "-loglevel", "error", 
                 "-stats",
