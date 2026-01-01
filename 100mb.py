@@ -49,17 +49,24 @@ def clean_log_file():
             pass
 
 def check_nvenc_available() -> bool:
-    """Checks if NVENC is available using the bundled or system FFmpeg."""
+    """
+    Checks if NVENC is actually usable by attempting a dummy encoding.
+    Returns True only if hardware is present and working.
+    """
     ffmpeg_exe = get_resource_path("ffmpeg")
     try:
-        # Check if ffmpeg runs at all
-        subprocess.run(
-            [ffmpeg_exe, "-hide_banner", "-encoders"],
-            capture_output=True, text=True, check=True, timeout=5
-        )
-        # Check specific encoder availability safely
-        output = subprocess.check_output([ffmpeg_exe, "-encoders"], text=True)
-        return "hevc_nvenc" in output
+        # Attempt to encode 1 frame of black video using NVENC
+        # If hardware is missing, this will fail with return code != 0
+        cmd = [
+            ffmpeg_exe,
+            "-hide_banner", "-v", "error",
+            "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.1", # Dummy input
+            "-vframes", "1",
+            "-c:v", "hevc_nvenc", # Test specifically for HEVC NVENC
+            "-f", "null", "-"     # Throw away output
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
     except Exception:
         return False
 
