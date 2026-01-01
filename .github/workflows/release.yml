@@ -5,7 +5,7 @@ on:
     types: [created]
   workflow_dispatch:
 
-# Grant write access to upload assets to the Release
+# Critical: Grant write permission to upload assets to the Release
 permissions:
   contents: write
 
@@ -18,18 +18,19 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            # Using BtbN GPL build (Includes libx264/x265 needed for your script)
-            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+            # Gyan.dev Essentials (Static) - Good balance of size vs compatibility for Windows
+            ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
             exe_ext: .exe
             sep: ';'
             asset_name_suffix: -win64
           - os: ubuntu-latest
-            # Using BtbN GPL build
+            # BtbN GPL (Static) - Required for libx264/libx265 support on Linux
             ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
             exe_ext: ''
             sep: ':'
             asset_name_suffix: -linux
           - os: macos-latest
+            # Evermeet - Standard macOS static build
             ffmpeg_url_mac: https://evermeet.cx/ffmpeg/getrelease/zip
             ffprobe_url_mac: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
             exe_ext: ''
@@ -48,35 +49,27 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
 
-      # --- FFmpeg Download & Extraction (Specific to BtbN structure) ---
+      # --- FFmpeg Download Section ---
 
       - name: Download FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: |
           Invoke-WebRequest "${{ matrix.ffmpeg_url }}" -OutFile ffmpeg.zip
-          # Extract the zip
           Expand-Archive ffmpeg.zip -DestinationPath .
-          # BtbN zips have a root folder (e.g., ffmpeg-master-latest-win64-gpl/)
-          # We search for the binaries inside the 'bin' folder regardless of the exact parent name
-          $ffmpegPath = Get-ChildItem -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
-          $ffprobePath = Get-ChildItem -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
           
-          # Move them to the root of the workspace
-          Move-Item $ffmpegPath.FullName .
-          Move-Item $ffprobePath.FullName .
+          # Find the folder containing 'bin' (Gyan.dev structure varies slightly by version)
+          $binPath = Get-ChildItem -Recurse -Directory -Filter "bin" | Select-Object -First 1
           
-          # Cleanup to save space/confusion
-          Remove-Item ffmpeg.zip
-          Remove-Item -Recurse "ffmpeg-master-latest-win64-gpl" -ErrorAction SilentlyContinue
+          # Move binaries to the root workspace
+          Move-Item "$($binPath.FullName)\ffmpeg.exe" .
+          Move-Item "$($binPath.FullName)\ffprobe.exe" .
 
       - name: Download FFmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
           wget "${{ matrix.ffmpeg_url }}" -O ffmpeg.tar.xz
-          # Extract, stripping the root folder, and grabbing specific files from bin/
+          # Extract ONLY the binaries from the bin/ folder, stripping directory structure
           tar -xf ffmpeg.tar.xz --strip-components=2 --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
-          
-          # Ensure they are executable
           chmod +x ffmpeg ffprobe
 
       - name: Download FFmpeg (macOS)
@@ -84,7 +77,6 @@ jobs:
         run: |
           curl -L "${{ matrix.ffmpeg_url_mac }}" -o ffmpeg.zip
           curl -L "${{ matrix.ffprobe_url_mac }}" -o ffprobe.zip
-          # macOS evermeet zips just contain the binary directly
           unzip -o ffmpeg.zip
           unzip -o ffprobe.zip
           chmod +x ffmpeg ffprobe
@@ -94,13 +86,10 @@ jobs:
       - name: Build Executables
         shell: bash
         run: |
-          # Loop through the 4 script versions
+          # Build 8mb, 50mb, 100mb, 500mb
           for script in 8mb 50mb 100mb 500mb; do
             echo "Building $script..."
             
-            # --clean: Clear cache
-            # --onefile: Bundle into one file
-            # --add-binary: specifically adds the ffmpeg/ffprobe binaries from root to the bundle
             pyinstaller --clean --onefile \
               --add-binary "ffmpeg${{ matrix.exe_ext }}${{ matrix.sep }}." \
               --add-binary "ffprobe${{ matrix.exe_ext }}${{ matrix.sep }}." \
