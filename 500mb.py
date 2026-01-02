@@ -236,20 +236,28 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     vcodec = 'hevc_nvenc' if use_nvenc else 'libx265'
     preset = 'p5' if use_nvenc else 'medium'
     
-    base_config_args = [
+    # Initialize the argument list
+    base_config_args = []
+
+    if use_nvenc:
+        base_config_args.extend(["-hwaccel", "cuda"])
+    
+    # Add input and standard flags
+    base_config_args.extend([
         "-i", input_path, 
-        "-c:v", vcodec, "-preset", preset,
+        "-c:v", vcodec, 
+        "-preset", preset,
         "-b:v", target_video_bitrate_ffmpeg,
         "-maxrate:v", target_video_bitrate_ffmpeg,
         "-bufsize:v", f"{target_video_bitrate_kbps * 2}k",
         "-filter:v", f"fps={fps}", 
         "-tag:v", "hvc1", 
         "-c:a", "copy"
-    ]
+    ])
     
     try:
         if use_nvenc:
-            print("Using NVENC (Two-Pass)...")
+            print("Using NVENC GPU (Two-Pass)...")
             
             base_config_args.extend(["-rc", "vbr", "-spatial-aq", "1", "-temporal-aq", "1", "-aq", "1"])
             
