@@ -4,25 +4,21 @@ import time
 import os
 import re
 import math
+import json
+import threading
 from pathlib import Path
-from typing import Tuple, Optional, Union, List
+from typing import Tuple, Optional, List
 
 # --- Constants ---
 MB_TO_BYTES = 1024 * 1024
 MB_TO_BITS = 8 * 1024 * 1024
 LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"] 
 
-# --- Utility Functions ---
+# --- Helpers ---
 
 def get_resource_path(filename: str) -> str:
-    """
-    Get absolute path to resource, works for dev and for PyInstaller.
-    Ensures that when the app is frozen (onefile), it looks for ffmpeg/ffprobe
-    inside the temporary folder (_MEIPASS) instead of the system PATH.
-    """
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
-        # Append .exe if on Windows and not already present
         if sys.platform == 'win32' and not filename.lower().endswith('.exe'):
             filename = f"{filename}.exe"
         return os.path.join(base_path, filename)
@@ -32,332 +28,281 @@ def get_file_size(file_path: str) -> int:
     return os.path.getsize(file_path)
 
 def format_size(size_bytes: int) -> str:
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < MB_TO_BYTES:
-        return f"{size_bytes/1024:.2f} KB"
-    else:
-        return f"{size_bytes/MB_TO_BYTES:.2f} MB"
+    if size_bytes < 1024: return f"{size_bytes} B"
+    elif size_bytes < MB_TO_BYTES: return f"{size_bytes/1024:.2f} KB"
+    else: return f"{size_bytes/MB_TO_BYTES:.2f} MB"
 
-def clean_log_file():
-    """Removes the temporary FFmpeg log files."""
+def clean_log_file(prefixes=None):
     for log_file in LOG_FILES_TO_CLEAN:
         try:
-            if os.path.exists(log_file):
-                os.remove(log_file)
-        except Exception:
-            pass
+            if os.path.exists(log_file): os.remove(log_file)
+        except: pass
+    if prefixes:
+        for p in prefixes:
+            for ext in ["-0.log", "-0.log.mbtree"]:
+                try:
+                    f = p + ext
+                    if os.path.exists(f): os.remove(f)
+                except: pass
 
 def check_nvenc_available() -> bool:
-    """
-    Checks if NVENC is actually usable by attempting a dummy encoding.
-    Returns True only if hardware is present and working.
-    """
     ffmpeg_exe = get_resource_path("ffmpeg")
     try:
-        # Attempt to encode 1 frame of black video using NVENC
-        # If hardware is missing, this will fail with return code != 0
         cmd = [
-            ffmpeg_exe,
-            "-hide_banner", "-v", "error",
-            "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1", # Dummy input
-            "-vframes", "1",
-            "-c:v", "hevc_nvenc", # Test specifically for HEVC NVENC
-            "-f", "null", "-"     # Throw away output
+            ffmpeg_exe, "-hide_banner", "-v", "error", "-f", "lavfi", 
+            "-i", "color=c=black:s=1280x720:r=1:d=0.1", "-vframes", "1",
+            "-c:v", "hevc_nvenc", "-f", "null", "-"
         ]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
-    except Exception:
+    except:
         return False
 
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int]]:
     ffprobe_exe = get_resource_path("ffprobe")
     try:
-        cmd_fps = [ffprobe_exe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-        fps_output = subprocess.check_output(cmd_fps, text=True).strip()
+        cmd_base = [ffprobe_exe, "-v", "error", "-select_streams", "v:0", "-of", "default=noprint_wrappers=1:nokey=1"]
+        fps_out = subprocess.check_output(cmd_base + ["-show_entries", "stream=avg_frame_rate", input_path], text=True).strip()
+        dur_out = subprocess.check_output(cmd_base + ["-show_entries", "format=duration", input_path], text=True).strip()
         
-        cmd_audio_br = [ffprobe_exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-        audio_bitrate_output = subprocess.check_output(cmd_audio_br, text=True).strip()
-        
-        cmd_duration = [ffprobe_exe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-        duration_output = subprocess.check_output(cmd_duration, text=True).strip()
-        
-        if not fps_output or '/' not in fps_output:
-            print("Error: Could not determine video FPS.")
-            return None
-        num, den = map(int, fps_output.split('/'))
+        cmd_aud = [ffprobe_exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+        aud_out = subprocess.check_output(cmd_aud, text=True).strip()
+
+        if not fps_out or '/' not in fps_out: return None
+        num, den = map(int, fps_out.split('/'))
         fps = num / den
         
-        duration = float(duration_output)
-
-        audio_bitrate_bps = int(audio_bitrate_output) if audio_bitrate_output.isdigit() else 192000
-        audio_bitrate_kbps = math.ceil(audio_bitrate_bps / 1000)
-        
-        original_size_bytes = get_file_size(input_path)
-        
-        return duration, original_size_bytes, fps, audio_bitrate_kbps
-    
-    except Exception as e:
-        print(f"Error during video info extraction: {e}")
+        audio_bps = int(aud_out) if aud_out.isdigit() else 128000
+        return float(dur_out), get_file_size(input_path), fps, math.ceil(audio_bps / 1000)
+    except:
         return None
 
-def run_ffmpeg_pass(cmd: List[str], duration: Optional[float] = None) -> Tuple[bool, str]:
-    print("\r", end="")
-
+def get_smart_split_point(input_path: str, duration: float) -> float:
+    print("Analyzing for Smart Split point...")
     try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding='utf-8',
-            errors='ignore'
-        )
-    except FileNotFoundError:
-        return False, "Error: FFmpeg or ffprobe executable not found. Ensure they are in your PATH or accessible to the executable."
-    except Exception as e:
-        return False, f"Error starting FFmpeg process: {str(e)}"
+        cmd = [get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,size,flags", "-of", "json", input_path]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        packets = json.loads(res.stdout).get('packets', [])
+        
+        target = sum(int(p.get('size', 0)) for p in packets) / 2
+        curr, last_k = 0, 0.0
+        
+        for p in packets:
+            curr += int(p.get('size', 0))
+            if 'K' in p.get('flags', ''): last_k = float(p.get('pts_time', 0))
+            if curr >= target: return last_k if last_k > 0 else duration/2
+    except: pass
+    return duration / 2
 
-    if process.stderr is None:
-        process.wait()
-        return False, "Error: Failed to open FFmpeg stderr stream for progress reading."
+# --- Progress Tracking ---
 
-    stderr_lines = []
-    fps_pattern = re.compile(r'fps=\s*(\d+\.?\d*)')
-    bitrate_pattern = re.compile(r'bitrate=\s*(\d+\.\d+|\d+)(?:kbits/s|Mbits/s|bits/s)?')
+class ProgressTracker:
+    def __init__(self, duration_a, duration_b):
+        self.dur_a, self.dur_b = duration_a, duration_b
+        self.total_dur = duration_a + duration_b
+        self.time_a = self.time_b = 0.0
+        self.fps_a = self.fps_b = 0.0
+        self.spd_a = self.spd_b = 0.001
+        self.lock = threading.Lock()
+
+    def update(self, is_a, time_val, fps_val, speed_val):
+        with self.lock:
+            if is_a:
+                self.time_a = time_val
+                if fps_val: self.fps_a = fps_val
+                if speed_val: self.spd_a = speed_val
+            else:
+                self.time_b = time_val
+                if fps_val: self.fps_b = fps_val
+                if speed_val: self.spd_b = speed_val
+
+    def get_stats(self):
+        with self.lock:
+            t_a = min(self.time_a, self.dur_a)
+            t_b = min(self.time_b, self.dur_b)
+            prog = min(100, ((t_a + t_b) / self.total_dur) * 100)
+            fps = self.fps_a + self.fps_b
+            rem_a = max(0, self.dur_a - self.time_a)
+            rem_b = max(0, self.dur_b - self.time_b)
+            eta = max(rem_a / self.spd_a, rem_b / self.spd_b)
+            return prog, fps, int(eta)
+
+def monitor_process(process, tracker, is_a):
+    # Fix: Search patterns independently to handle variable output order
+    re_time = re.compile(r'time=\s*(\d+:\d+:\d+\.\d+)')
+    re_fps = re.compile(r'fps=\s*(\d+\.?\d*)')
+    re_speed = re.compile(r'speed=\s*(\d+\.?\d*)x')
     
-    for line in iter(process.stderr.readline, ''):
-        stderr_lines.append(line)
+    buf = ""
+    while True:
+        char = process.stderr.read(1)
+        if not char: break
         
-        if line.lower().startswith('error'):
-             print(line, end="")
-
-        progress_info = []
-        current_time = 0.0
-        
-        # 1. Calculate Progress %
-        if duration and "time=" in line:
-            time_str = line.split("time=")[1].split()[0]
-            try:
-                parts = list(map(float, time_str.split(':')))
-                if len(parts) == 3:
-                    hrs, mins, secs = parts
-                elif len(parts) == 2:
-                    hrs, mins, secs = 0.0, parts[0], parts[1]
-                else:
-                    hrs, mins, secs = 0.0, 0.0, parts[0]
-
-                current_time = hrs * 3600 + mins * 60 + secs
-                progress = min(100, current_time / duration * 100)
-                progress_info.append(f"Progress: {progress:.1f}%")
-            except Exception:
-                pass
-        
-        # 2. Get Current Speed (FPS and Multiplier)
-        fps_match = fps_pattern.search(line)
-        if fps_match:
-            progress_info.append(f"Speed: {float(fps_match.group(1)):.1f} FPS")
-        
-        # 3. Calculate Estimated Time Remaining (ETA) for Pass 2
-        is_pass_two = ("-pass" in cmd and "2" in cmd)
-        
-        if duration and current_time > 0 and is_pass_two:
-            speed_match = re.search(r'speed=\s*(\d+\.?\d*)x', line)
-            if speed_match:
-                speed_multiplier = float(speed_match.group(1))
-                if speed_multiplier > 0:
-                    time_remaining_seconds = (duration - current_time) / speed_multiplier
+        if char in ('\r', '\n'):
+            if buf.strip():
+                try:
+                    t_match = re_time.search(buf)
+                    f_match = re_fps.search(buf)
+                    s_match = re_speed.search(buf)
                     
-                    if time_remaining_seconds > 0:
-                        hours = int(time_remaining_seconds // 3600)
-                        minutes = int((time_remaining_seconds % 3600) // 60)
-                        seconds = int(time_remaining_seconds % 60)
+                    if t_match:
+                        h, m, s = map(float, t_match.group(1).split(':'))
+                        secs = h*3600 + m*60 + s
                         
-                        time_str = f"{hours}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes:02d}:{seconds:02d}"
-                        progress_info.append(f"ETA: {time_str}")
+                        fps = float(f_match.group(1)) if f_match else 0.0
+                        spd = float(s_match.group(1)) if s_match else 0.001
+                        
+                        tracker.update(is_a, secs, fps, spd)
+                except: pass
+            buf = ""
+        else:
+            buf += char
 
-        
-        # 4. Get Bitrate
-        bitrate_match = bitrate_pattern.search(line)
-        if bitrate_match:
-            progress_info.append(f"Bitrate: {bitrate_match.group(1)} kbits/s")
-        
-        if progress_info:
-            print(f"\r{' | '.join(progress_info)}", end="")
-
-    process.wait()
-
-    if process.returncode != 0:
-        return False, "".join(stderr_lines)
-    
-    print()
-    return True, ""
-
-
-# --- Main Compression Function ---
+# --- Main Logic ---
 
 def compress_video(input_path: str, output_path: Optional[str] = None, target_size_mb: int = 100) -> Tuple[bool, str]:
-    start_time = time.time()
-    ffmpeg_exe = get_resource_path("ffmpeg") # <--- FIX 5: Get bundled path
+    start_t = time.time()
+    ffmpeg_exe = get_resource_path("ffmpeg")
+    clean_log_file()
     
-    # 1. Check/Cleanup before running
-    clean_log_file() 
+    if not os.path.exists(input_path): return False, "Input not found"
     
-    if not os.path.exists(input_path):
-        return False, f"Error: Input file '{input_path}' not found"
+    info = get_video_info(input_path)
+    if not info: return False, "Info failed"
+    duration, orig_bytes, fps, audio_kbps = info
     
-    video_info = get_video_info(input_path)
-    if not video_info:
-        return False, "Failed to get necessary video information."
-    
-    duration, original_size_bytes, fps, audio_bitrate_kbps = video_info
-    original_size_mb = original_size_bytes / MB_TO_BYTES
-    
-    if original_size_mb <= target_size_mb:
-        clean_log_file()
-        return False, f"Video is already smaller than the target size: {original_size_mb:.2f} MB."
-    
-    # Calculate required VIDEO-ONLY bitrate
-    audio_size_bits = audio_bitrate_kbps * 1000 * duration
-    target_size_bits = target_size_mb * MB_TO_BITS
-    
-    target_video_bits = max(0, target_size_bits - audio_size_bits)
-    target_video_bitrate_bps = target_video_bits / duration
-    
-    target_video_bitrate_kbps = math.ceil(target_video_bitrate_bps / 1000)
-    target_video_bitrate_ffmpeg = f"{target_video_bitrate_kbps}k"
-    
-    print(f"Targeting: {target_size_mb} MB | Video Bitrate: {target_video_bitrate_kbps} kbps")
+    if (orig_bytes / MB_TO_BYTES) <= target_size_mb:
+        return False, f"Already smaller: {orig_bytes/MB_TO_BYTES:.2f} MB"
 
     if output_path is None:
         output_path = str(Path(input_path).with_name(f"{Path(input_path).stem}_{target_size_mb}MB{Path(input_path).suffix}"))
 
     use_nvenc = check_nvenc_available()
-    vcodec = 'hevc_nvenc' if use_nvenc else 'libx265'
-    preset = 'p5' if use_nvenc else 'medium'
     
-    # Initialize the argument list
-    base_config_args = []
-
+    # --- PARALLEL NVENC (2-PASS) ---
     if use_nvenc:
-        base_config_args.extend(["-hwaccel", "cuda"])
-    
-    # Add input and standard flags
-    base_config_args.extend([
-        "-i", input_path, 
-        "-c:v", vcodec, 
-        "-preset", preset,
-        "-b:v", target_video_bitrate_ffmpeg,
-        "-maxrate:v", target_video_bitrate_ffmpeg,
-        "-bufsize:v", f"{target_video_bitrate_kbps * 2}k",
-        "-filter:v", f"fps={fps}", 
-        "-tag:v", "hvc1", 
-        "-c:a", "copy"
-    ])
-    
-    try:
-        if use_nvenc:
-            print("Using NVENC GPU (Two-Pass)...")
-            
-            base_config_args.extend(["-rc", "vbr", "-spatial-aq", "1", "-temporal-aq", "1", "-aq", "1"])
-            
-            # --- Pass 1: Analysis (With Progress Parsing) ---
-            print("Pass 1/2: Analyzing...")
-            pass1_cmd = [
-                ffmpeg_exe, *base_config_args, 
-                "-pass", "1", 
-                "-loglevel", "error", 
-                "-stats",
-                "-f", "null", 
-                "-an",
-                "-y",
-                "NUL" if os.name == 'nt' else "/dev/null"
-            ]
-            
-            success, error_msg = run_ffmpeg_pass(pass1_cmd, duration)
-            if not success:
-                return False, f"FFmpeg Pass 1 failed. Error:\n{error_msg}"
-
-            # --- Pass 2: Encoding (With Progress Parsing) ---
-            print("Pass 2/2: Encoding...")
-            pass2_cmd = [
-                ffmpeg_exe, *base_config_args,
-                "-pass", "2",
-                "-loglevel", "error", # suppress header, keep errors
-                "-stats", # prints progress to stderr
-                "-y", 
-                output_path
-            ]
-            
-            success, error_msg = run_ffmpeg_pass(pass2_cmd, duration)
-            if not success:
-                return False, f"FFmpeg Pass 2 failed. Error:\n{error_msg}"
-
-        else:
-            print("Using libx265 CPU (One-Pass ABR)...")
-            
-            base_config_args.extend([
-                "-crf", "23", 
-                "-x265-params", "aq-mode=3:no-sao=1"
-            ])
-
-            # --- Single Pass Encoding (With Progress Parsing) ---
-            single_pass_cmd = [
-                ffmpeg_exe, *base_config_args,
-                "-y", 
-                "-loglevel", "error", 
-                "-stats",
-                output_path
-            ]
-            
-            success, error_msg = run_ffmpeg_pass(single_pass_cmd, duration)
-            if not success:
-                return False, f"FFmpeg Encoding failed. Error:\n{error_msg}"
+        split_time = get_smart_split_point(input_path, duration)
+        print(f"Splitting at {split_time:.2f}s")
         
-        result_msg = output_path
+        durs = [split_time, duration - split_time]
+        brs = []
+        
+        tgt_part_mb = target_size_mb / 2
+        for d in durs:
+            audio_mb = (audio_kbps * d * 1000) / 8 / MB_TO_BYTES
+            video_mb = max(0.5, tgt_part_mb - audio_mb)
+            # SAFETY FACTOR: Reduced to 0.95 to avoid overshoot
+            br_k = math.floor(((video_mb * MB_TO_BITS) / d / 1000) * 0.95)
+            brs.append(br_k)
 
-    finally:
-        # Final cleanup regardless of success/failure
-        clean_log_file()
+        print(f"Worker 1: {brs[0]}k | Worker 2: {brs[1]}k")
+        
+        base = [ffmpeg_exe, "-hwaccel", "cuda", "-y", "-hide_banner", "-loglevel", "info", "-stats"]
+        log_a, log_b = "log_part1", "log_part2"
+        clean_log_file([log_a, log_b])
 
-    if success:
-        print("Processing complete!")
+        # PASS 1
+        print("Parallel Pass 1/2: Analysis...")
+        cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[0]}k", "-pass", "1", "-passlogfile", log_a, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
+        cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[1]}k", "-pass", "1", "-passlogfile", log_b, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
+
+        pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, text=True, bufsize=0)
+        pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, text=True, bufsize=0)
         
-        if os.path.exists(output_path):
-            compressed_size = get_file_size(output_path)
-            reduction = (1 - compressed_size / original_size_bytes) * 100
-            
-            print(f"Final size: {format_size(compressed_size)}")
-            print(f"Reduction: {reduction:.1f}%")
+        trk = ProgressTracker(durs[0], durs[1])
+        t1 = threading.Thread(target=monitor_process, args=(pa, trk, True))
+        t2 = threading.Thread(target=monitor_process, args=(pb, trk, False))
+        t1.start(); t2.start()
         
-        elapsed_time = time.time() - start_time
-        print(f"Execution time: {elapsed_time:.2f} seconds")
+        while pa.poll() is None or pb.poll() is None:
+            p, f, e = trk.get_stats()
+            print(f"\rProg: {p:.1f}% | FPS: {f:.1f}   ", end="")
+            time.sleep(0.5)
+        t1.join(); t2.join()
         
-        return True, result_msg
+        if pa.returncode != 0 or pb.returncode != 0: return False, "Pass 1 Failed"
+        print("\nPass 1 Complete.")
+
+        # PASS 2
+        print("Parallel Pass 2/2: Encoding...")
+        trk = ProgressTracker(durs[0], durs[1])
+        cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[0]}k", "-pass", "2", "-passlogfile", log_a, "-c:a", "aac", "-b:a", f"{audio_kbps}k", "p1.mp4"]
+        cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[1]}k", "-pass", "2", "-passlogfile", log_b, "-c:a", "aac", "-b:a", f"{audio_kbps}k", "p2.mp4"]
+
+        pa = subprocess.Popen(cmd_a2, stderr=subprocess.PIPE, text=True, bufsize=0)
+        pb = subprocess.Popen(cmd_b2, stderr=subprocess.PIPE, text=True, bufsize=0)
+        
+        t1 = threading.Thread(target=monitor_process, args=(pa, trk, True))
+        t2 = threading.Thread(target=monitor_process, args=(pb, trk, False))
+        t1.start(); t2.start()
+        
+        while pa.poll() is None or pb.poll() is None:
+            p, f, e = trk.get_stats()
+            print(f"\rProg: {p:.1f}% | FPS: {f:.1f} | ETA: {e//3600:02}:{(e%3600)//60:02}:{e%60:02}   ", end="")
+            time.sleep(0.5)
+        t1.join(); t2.join()
+
+        if pa.returncode != 0 or pb.returncode != 0: return False, "Pass 2 Failed"
+        
+        print("\nStitching...")
+        with open("list.txt", "w") as f: f.write("file 'p1.mp4'\nfile 'p2.mp4'")
+        subprocess.run([ffmpeg_exe, "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "-y", output_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        clean_log_file([log_a, log_b])
+        for f in ["p1.mp4", "p2.mp4", "list.txt"]: 
+            try: os.remove(f)
+            except: pass
+
+    # --- SERIAL CPU PATH ---
     else:
-        return False, result_msg
+        tgt_bits = target_size_mb * MB_TO_BITS
+        vid_bits = max(0, tgt_bits - (audio_kbps * 1000 * duration))
+        vid_br = f"{math.ceil(vid_bits / duration / 1000)}k"
+        
+        print(f"CPU Fallback. Target: {vid_br}")
+        cmd = [
+            ffmpeg_exe, "-y", "-i", input_path, "-c:v", "libx265", "-preset", "medium",
+            "-b:v", vid_br, "-maxrate:v", vid_br, "-bufsize:v", f"{int(vid_br[:-1])*2}k",
+            "-filter:v", f"fps={fps}", "-tag:v", "hvc1", "-c:a", "copy",
+            "-loglevel", "error", "-stats", output_path
+        ]
+        
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors='ignore')
+        pat = re.compile(r'time=(\d+:\d+:\d+\.\d+).*?speed=\s*(\d+\.?\d*)x')
+        while True:
+            line = process.stderr.readline()
+            if not line: break
+            match = pat.search(line)
+            if match:
+                h, m, s = map(float, match.group(1).split(':'))
+                prog = min(100, ((h*3600 + m*60 + s) / duration) * 100)
+                print(f"\rProgress: {prog:.1f}% | Speed: {match.group(2)}x", end="")
+        process.wait()
+        print()
+        if process.returncode != 0: return False, "CPU Encode Failed"
 
-# --- Main Execution Block ---
+    clean_log_file()
+    
+    if os.path.exists(output_path):
+        final_sz = get_file_size(output_path)
+        print(f"Done. Final: {format_size(final_sz)} ({(1-final_sz/orig_bytes)*100:.1f}%)")
+        print(f"Time: {time.time()-start_t:.1f}s")
+        return True, output_path
+    
+    return False, "Output missing"
 
 if __name__ == "__main__":
-    
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print("Usage: Drag video onto executable, or run: python script.py input.mp4 [output.mp4]")
+    if len(sys.argv) < 2:
+        print("Usage: script.py input.mp4 [output.mp4]")
         sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) == 3 else None
+    inp = sys.argv[1]
+    out = sys.argv[2] if len(sys.argv) >= 3 else None
     
     TARGET_COMPRESSION_SIZE_MB = 50
-    
+
     if len(sys.argv) > 3 and sys.argv[3].isdigit():
         TARGET_COMPRESSION_SIZE_MB = int(sys.argv[3])
 
-    success, result = compress_video(input_file, output_file, target_size_mb=TARGET_COMPRESSION_SIZE_MB)
-    
-    if success:
-        print(f"Conversion successful: {result}")
-    else:
-        print(f"Conversion failed: {result}")
-        if "already smaller" not in result:
-             sys.exit(1)
+    s, r = compress_video(inp, out, target_size_mb=TARGET_COMPRESSION_SIZE_MB)
+    if not s: sys.exit(1)
