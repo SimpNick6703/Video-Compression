@@ -128,7 +128,6 @@ class ProgressTracker:
             return prog, fps, int(eta)
 
 def monitor_process(process, tracker, is_a):
-    # Fix: Search patterns independently to handle variable output order
     re_time = re.compile(r'time=\s*(\d+:\d+:\d+\.\d+)')
     re_fps = re.compile(r'fps=\s*(\d+\.?\d*)')
     re_speed = re.compile(r'speed=\s*(\d+\.?\d*)x')
@@ -191,8 +190,8 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
         for d in durs:
             audio_mb = (audio_kbps * d * 1000) / 8 / MB_TO_BYTES
             video_mb = max(0.5, tgt_part_mb - audio_mb)
-            # SAFETY FACTOR: Reduced to 0.95 to avoid overshoot
-            br_k = math.floor(((video_mb * MB_TO_BITS) / d / 1000) * 0.95)
+            # SAFETY FACTOR: Reduced to 0.90 to avoid overshoot
+            br_k = math.floor(((video_mb * MB_TO_BITS) / d / 1000) * 0.90)
             brs.append(br_k)
 
         print(f"Worker 1: {brs[0]}k | Worker 2: {brs[1]}k")
@@ -293,16 +292,20 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: script.py input.mp4 [output.mp4]")
+        print("Usage: python script.py <input> [output] [size_mb]")
         sys.exit(1)
 
-    inp = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) >= 3 else None
+    input_file = sys.argv[1]
     
-    TARGET_COMPRESSION_SIZE_MB = 50
+    # Defaults
+    output_file = None
+    target_mb = 50
 
-    if len(sys.argv) > 3 and sys.argv[3].isdigit():
-        TARGET_COMPRESSION_SIZE_MB = int(sys.argv[3])
+    for arg in sys.argv[2:]:
+        if arg.isdigit():
+            target_mb = int(arg)
+        else:
+            output_file = arg
 
-    s, r = compress_video(inp, out, target_size_mb=TARGET_COMPRESSION_SIZE_MB)
-    if not s: sys.exit(1)
+    success, result = compress_video(input_file, output_file, target_size_mb=target_mb)
+    if not success: sys.exit(1)

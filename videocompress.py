@@ -191,8 +191,8 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
         for d in durs:
             audio_mb = (audio_kbps * d * 1000) / 8 / MB_TO_BYTES
             video_mb = max(0.5, tgt_part_mb - audio_mb)
-            # 0.95 Safety Factor
-            br_k = math.floor(((video_mb * MB_TO_BITS) / d / 1000) * 0.95)
+            # 0.90 Safety Factor
+            br_k = math.floor(((video_mb * MB_TO_BITS) / d / 1000) * 0.90)
             brs.append(br_k)
 
         print(f"Worker 1: {brs[0]}k | Worker 2: {brs[1]}k")
@@ -294,24 +294,21 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     return False, "Output missing"
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or len(sys.argv) > 4:
+    if len(sys.argv) < 2:
         print("Usage: python videocompress.py <input> [output] [size_mb]")
         sys.exit(1)
 
-    inp = sys.argv[1]
-    out = None
-    TARGET_MB = 100 # Default
-
-    # Arg Parsing for flexible input
-    if len(sys.argv) >= 3:
-        out = sys.argv[2]
+    input_file = sys.argv[1]
     
-    if len(sys.argv) == 4:
-        if sys.argv[3].isdigit():
-            TARGET_MB = int(sys.argv[3])
-        else:
-            print("Error: Size must be integer MB.")
-            sys.exit(1)
+    # Defaults
+    output_file = None
+    target_mb = 100
 
-    s, r = compress_video(inp, out, target_size_mb=TARGET_MB)
-    if not s: sys.exit(1)
+    for arg in sys.argv[2:]:
+        if arg.isdigit():
+            target_mb = int(arg)
+        else:
+            output_file = arg
+
+    success, result = compress_video(input_file, output_file, target_size_mb=target_mb)
+    if not success: sys.exit(1)
