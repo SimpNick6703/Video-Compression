@@ -243,8 +243,8 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[0]}k", "-pass", "1", "-passlogfile", log_a, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
             cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[1]}k", "-pass", "1", "-passlogfile", log_b, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
 
-            pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, bufsize=0)
-            pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, bufsize=0)
+            pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, text=True, bufsize=0)
+            pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, text=True, bufsize=0)
             
             trk = ProgressTracker(durs[0], durs[1])
             t1 = threading.Thread(target=monitor_process, args=(pa, trk, True))
