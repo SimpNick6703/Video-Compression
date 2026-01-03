@@ -19,8 +19,8 @@ For using prebuilt binaries from releases, you just need to download the executa
 > You may view if your Nvidia GPU supports NVENC [here](https://developer.nvidia.com/video-encode-decode-support-matrix) and keep your Nvidia GPU driver version 570.0 or higher.
 
 > [!CAUTION]
-> The script currently does not support other GPU vendors besides NVIDIA. It will falback to CPU encoding if no compatible NVIDIA GPU is found.
-> AMD (`hevc_amf`/`h264_amf`) and Intel (`hevc_qsv`/`h264_qsv`) GPU acceleration support may be added in future updates.
+> The script currently does not support other GPU vendors besides NVIDIA. It will fall back to CPU encoding if no compatible NVIDIA GPU is found.
+> AMD (`hevc_amf`) and Intel (`hevc_qsv`) GPU acceleration support may be added in future updates.
 
 ## How to use
 - In Windows:
@@ -33,3 +33,26 @@ https://github.com/user-attachments/assets/0272427b-0db4-40dd-bd14-37d705d110a0
   - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
   - Make your downloaded file executable: `chmod +x {size}mb-linux`
   - Run in terminal as `./{size}mb-linux <input.mp4> [output.mp4]`
+
+## How to Build
+
+To build the preset executables yourself:
+
+### Prerequisites
+- Python 3.x
+- PyInstaller (`pip install pyinstaller`)
+
+### Building
+```bash
+python build.py
+```
+
+This will:
+1. Automatically download FFmpeg/FFprobe for your platform (if not already present)
+2. Generate all preset executables (8mb, 50mb, 100mb, 500mb) in `dist/`
+3. Clean up build artifacts and downloaded binaries
+
+To keep build artifacts for debugging:
+```bash
+python build.py --verbose
+```
