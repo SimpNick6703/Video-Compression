@@ -109,7 +109,7 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
     print("Analyzing for Smart Split point...")
     try:
         cmd = [get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,size,flags", "-of", "json", input_path]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
         packets = json.loads(res.stdout).get('packets', [])
         
         target = sum(int(p.get('size', 0)) for p in packets) / 2
