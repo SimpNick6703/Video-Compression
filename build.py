@@ -185,9 +185,10 @@ def create_preset_script(target_mb: int, temp_dir: str) -> str:
     
     # Update the usage message to reflect the preset
     content = re.sub(
-        r'Usage: python script\.py <input> \[output\] \[size_mb\]',
-        f'Usage: {target_mb}mb <input> [output]',
+        r'print\("Usage: python script\.py <input> \[output\] \[size_mb\]"\)',
+        f'print("Usage: {target_mb}mb <input> [output]")',
         content
+    )
     )
     
     script_path = os.path.join(temp_dir, f"{target_mb}mb.py")
