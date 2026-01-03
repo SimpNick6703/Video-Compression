@@ -275,7 +275,8 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             
             while pa.poll() is None or pb.poll() is None:
                 p, f, e = trk.get_stats()
-                print(f"\rProg: {p:.1f}% | FPS: {f:.1f} | ETA: {e//3600:02}:{(e%3600)//60:02}:{e%60:02}   ", end="")
+                speed = f / fps if fps > 0 else 0
+                print(f"\rProg: {p:.1f}% | FPS: {f:.1f} | Speed: {speed:.2f}x | ETA: {e//3600:02}:{(e%3600)//60:02}:{e%60:02}   ", end="")
                 time.sleep(0.5)
             t1.join(); t2.join()
 
@@ -320,16 +321,33 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             "-loglevel", "error", "-stats", output_path
         ]
         
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors='ignore')
-        pat = re.compile(r'time=(\d+:\d+:\d+\.\d+).*?speed=\s*(\d+\.?\d*)x')
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        pat = re.compile(r'frame=\s*(\d+).*?fps=\s*(\d+\.?\d*).*?time=(\d+:\d+:\d+\.\d+).*?speed=\s*(\d+\.?\d*)x')
+        buf = ""
+        last_speed = 0.001
         while True:
-            line = process.stderr.readline()
-            if not line: break
-            match = pat.search(line)
-            if match:
-                h, m, s = map(float, match.group(1).split(':'))
-                prog = min(100, ((h*3600 + m*60 + s) / duration) * 100)
-                print(f"\rProgress: {prog:.1f}% | Speed: {match.group(2)}x", end="")
+            byte = process.stderr.read(1)
+            if not byte:
+                break
+            char = byte.decode('utf-8', errors='ignore')
+            if char == '\r' or char == '\n':
+                match = pat.search(buf)
+                if match:
+                    frame = int(match.group(1))
+                    cur_fps = float(match.group(2)) if match.group(2) else 0
+                    h, m, s = map(float, match.group(3).split(':'))
+                    cur_time = h * 3600 + m * 60 + s
+                    speed = float(match.group(4)) if match.group(4) else last_speed
+                    if speed > 0:
+                        last_speed = speed
+                    prog = min(100, (cur_time / duration) * 100)
+                    remaining = duration - cur_time
+                    eta = remaining / last_speed if last_speed > 0 else 0
+                    eta_str = f"{int(eta//60)}m{int(eta%60)}s" if eta < 3600 else f"{int(eta//3600)}h{int((eta%3600)//60)}m"
+                    print(f"\rProgress: {prog:.1f}% | FPS: {cur_fps:.1f} | Speed: {speed:.2f}x | ETA: {eta_str}   ", end="")
+                buf = ""
+            else:
+                buf += char
         process.wait()
         print()
         if process.returncode != 0: return False, "CPU Encode Failed"
