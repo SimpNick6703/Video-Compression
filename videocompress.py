@@ -236,7 +236,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
         log_b = os.path.join(temp_dir, "log_part2")
         
         try:
-            base = [ffmpeg_exe, "-hwaccel", "cuda", "-y", "-hide_banner", "-loglevel", "info", "-stats"]
+            base = [ffmpeg_exe, "-hwaccel", "cuda", "-y", "-hide_banner", "-loglevel", "error", "-stats"]
 
             # PASS 1
             print("Parallel Pass 1/2: Analysis...")
