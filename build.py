@@ -189,7 +189,6 @@ def create_preset_script(target_mb: int, temp_dir: str) -> str:
         f'print("Usage: {target_mb}mb <input> [output]")',
         content
     )
-    )
     
     script_path = os.path.join(temp_dir, f"{target_mb}mb.py")
     with open(script_path, "w", encoding="utf-8") as f:
