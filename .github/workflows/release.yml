@@ -16,26 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            # FIXED: Use FFmpeg 7.1 Stable to prevent 'nvcuda.dll' errors on older drivers
-            ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
-            exe_ext: .exe
-            sep: ';'
-            asset_name_suffix: -win64
-          - os: ubuntu-latest
-            # John Van Sickle (Small & Compatible) - The standard for efficient Linux static builds
-            ffmpeg_url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-            exe_ext: ''
-            sep: ':'
-            asset_name_suffix: -linux
-          - os: macos-latest
-            # Evermeet (Standard macOS static build)
-            ffmpeg_url_mac: https://evermeet.cx/ffmpeg/getrelease/zip
-            ffprobe_url_mac: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
-            exe_ext: ''
-            sep: ':'
-            asset_name_suffix: -macos
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
     steps:
       - name: Checkout Code
@@ -49,56 +30,8 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
 
-      # --- FFmpeg Download Section ---
-
-      - name: Download FFmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          Invoke-WebRequest "${{ matrix.ffmpeg_url }}" -OutFile ffmpeg.zip
-          Expand-Archive ffmpeg.zip -DestinationPath .
-          
-          # Find the folder containing 'bin' (Handles the versioned folder name automatically)
-          $binPath = Get-ChildItem -Recurse -Directory -Filter "bin" | Select-Object -First 1
-          
-          # Move binaries to the root workspace
-          Move-Item "$($binPath.FullName)\ffmpeg.exe" .
-          Move-Item "$($binPath.FullName)\ffprobe.exe" .
-
-      - name: Download FFmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          wget "${{ matrix.ffmpeg_url }}" -O ffmpeg.tar.xz
-          
-          # JVS uses a single folder inside the tar (e.g., ffmpeg-x.x-amd64-static)
-          # We extract with --strip-components=1 to ignore that folder and grab the binaries directly
-          tar -xf ffmpeg.tar.xz --strip-components=1 --wildcards '*/ffmpeg' '*/ffprobe'
-          
-          chmod +x ffmpeg ffprobe
-
-      - name: Download FFmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          curl -L "${{ matrix.ffmpeg_url_mac }}" -o ffmpeg.zip
-          curl -L "${{ matrix.ffprobe_url_mac }}" -o ffprobe.zip
-          unzip -o ffmpeg.zip
-          unzip -o ffprobe.zip
-          chmod +x ffmpeg ffprobe
-
-      # --- Build Section ---
-
       - name: Build Executables
-        shell: bash
-        run: |
-          # Build 8mb, 50mb, 100mb, 500mb
-          for script in 8mb 50mb 100mb 500mb; do
-            echo "Building $script..."
-            
-            pyinstaller --clean --onefile \
-              --add-binary "ffmpeg${{ matrix.exe_ext }}${{ matrix.sep }}." \
-              --add-binary "ffprobe${{ matrix.exe_ext }}${{ matrix.sep }}." \
-              --name "${script}${{ matrix.asset_name_suffix }}" \
-              "$script.py"
-          done
+        run: python build.py
 
       # --- Upload Section ---
 
