@@ -240,8 +240,13 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
 
             # PASS 1
             print("Parallel Pass 1/2: Analysis...")
-            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[0]}k", "-pass", "1", "-passlogfile", log_a, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
-            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[1]}k", "-pass", "1", "-passlogfile", log_b, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
+            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+                            "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
+                            "-pass", "1", "-passlogfile", log_a, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
+            
+            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+                            "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
+                            "-pass", "1", "-passlogfile", log_b, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
 
             pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, text=True, bufsize=0)
             pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, text=True, bufsize=0)
@@ -263,8 +268,13 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             # PASS 2
             print("Parallel Pass 2/2: Encoding...")
             trk = ProgressTracker(durs[0], durs[1])
-            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[0]}k", "-pass", "2", "-passlogfile", log_a, "-c:a", "copy", p1_path]
-            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", "-b:v", f"{brs[1]}k", "-pass", "2", "-passlogfile", log_b, "-c:a", "copy", p2_path]
+            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+                            "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
+                            "-pass", "2", "-passlogfile", log_a, "-c:a", "copy", str(p1_path)]
+            
+            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+                            "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
+                            "-pass", "2", "-passlogfile", log_b, "-c:a", "copy", str(p2_path)]
 
             pa = subprocess.Popen(cmd_a2, stderr=subprocess.PIPE, text=True, bufsize=0)
             pb = subprocess.Popen(cmd_b2, stderr=subprocess.PIPE, text=True, bufsize=0)
