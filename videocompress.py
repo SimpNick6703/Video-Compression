@@ -298,7 +298,7 @@ def encode_single_pass_hw(
     
     # Pre-input flags for VAAPI
     if encoder == "hevc_vaapi":
-        cmd.extend(["-init_hw_device", "vaapi=d1:/dev/dri/renderD128", "-filter_hw_device", "d1"])
+        cmd.extend(["-init_hw_device", "vaapi", "-filter_hw_device", "vaapi"])
         
     cmd.extend(["-i", input_path, "-c:v", encoder, "-b:v", f"{bitrate_k}k"])
 
