@@ -18,10 +18,6 @@ For using prebuilt binaries from releases, you just need to download the executa
 > [!NOTE]
 > You may view if your Nvidia GPU supports NVENC [here](https://developer.nvidia.com/video-encode-decode-support-matrix) and keep your Nvidia GPU driver version 570.0 or higher.
 
-> [!CAUTION]
-> The script currently does not support other GPU vendors besides NVIDIA. It will fall back to CPU encoding if no compatible NVIDIA GPU is found.
-> AMD (`hevc_amf`) and Intel (`hevc_qsv`) GPU acceleration support may be added in future updates.
-
 ## How to use
 - In Windows:
   - Download any of the target filesize build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
@@ -56,3 +52,17 @@ To keep build artifacts for debugging:
 ```bash
 python build.py --verbose
 ```
+
+## Encoder Priority Logic
+Platform | Encoder Priority Chain | Notes
+--- | --- | ---
+Windows | `hevc_nvenc` -> `hevc_amf` -> `hevc_qsv` -> `libx265` (CPU) | Explicit vendor-specific encoders are required.
+Linux | `hevc_nvenc` -> `hevc_vaapi` -> `libx265` (CPU) | `vaapi` covers both AMD and Intel integrated/dedicated.
+MacOS | `hevc_videotoolbox` -> `libx265` (CPU only) | VideoToolbox automatically handles AMD, Intel, & Apple Silicon. Older Nvidia GPUs aren't used by Nvidia Video Codec SDK on MacOS and handled by VideoToolbox if supported.
+
+Considering the wide variety of hardware configurations, the script uses the following priority logic to select the best available encoder on majority of users' systems:
+> `hevc_nvenc` > `hevc_vaapi` > `hevc_videotoolbox` > `hevc_amf` > `hevc_qsv` > `libx265` (CPU)
+
+> [!NOTE]
+> Only NVENC supports Two-Pass encoding among the listed encoders. Other encoders use Single-Pass encoding only.
+> If your dedicated GPU is being bypassed in favor of integrated GPU or CPU encoding, you'll need to manually change the priority logic in the script to suit your hardware setup. Or, you may simply remove unwanted encoders from the priority list in the script, build the executable again, and use that custom build.
