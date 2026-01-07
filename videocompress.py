@@ -20,10 +20,13 @@ LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log
 # --- Helpers ---
 
 def get_resource_path(filename: str) -> str:
-    """
-    Get absolute path to resource, works for dev and for PyInstaller.
-    When the app is frozen (onefile), it looks for ffmpeg/ffprobe
-    inside the temporary folder (_MEIPASS) instead of the system PATH.
+    """Resolve the absolute path to bundled resources.
+
+    Args:
+        filename: Base executable or file name (e.g., "ffmpeg").
+
+    Returns:
+        Absolute path to the resource, respecting PyInstaller bundling.
     """
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
@@ -33,17 +36,35 @@ def get_resource_path(filename: str) -> str:
     return filename
 
 def get_file_size(file_path: str) -> int:
-    """Return file size in bytes."""
+    """Return the file size in bytes.
+
+    Args:
+        file_path: Path to the file.
+
+    Returns:
+        File size in bytes.
+    """
     return os.path.getsize(file_path)
 
 def format_size(size_bytes: int) -> str:
-    """Format byte size to human-readable string."""
+    """Format a byte count as a human-readable string.
+
+    Args:
+        size_bytes: Size value in bytes.
+
+    Returns:
+        A concise human-readable string (B, KB, MB).
+    """
     if size_bytes < 1024: return f"{size_bytes} B"
     elif size_bytes < MB_TO_BYTES: return f"{size_bytes/1024:.2f} KB"
     else: return f"{size_bytes/MB_TO_BYTES:.2f} MB"
 
-def clean_log_file(prefixes=None):
-    """Remove temporary FFmpeg log files."""
+def clean_log_file(prefixes: Optional[List[str]] = None) -> None:
+    """Remove temporary FFmpeg log files.
+
+    Args:
+        prefixes: Optional list of 2-pass log prefixes to clean as well.
+    """
     for log_file in LOG_FILES_TO_CLEAN:
         try:
             if os.path.exists(log_file): os.remove(log_file)
@@ -57,8 +78,13 @@ def clean_log_file(prefixes=None):
                 except OSError: pass
 
 def check_encoder_available(encoder_name: str) -> bool:
-    """
-    Check if a specific encoder is usable.
+    """Check if a specific FFmpeg encoder can be used.
+
+    Args:
+        encoder_name: FFmpeg encoder name (e.g., "hevc_nvenc").
+
+    Returns:
+        True if a short test encode succeeds, else False.
     """
     ffmpeg_exe = get_resource_path("ffmpeg")
     try:
@@ -77,15 +103,18 @@ def check_encoder_available(encoder_name: str) -> bool:
         return False
 
 def select_best_encoder() -> str:
-    """
-    Select best available encoder based on priority logic.
-    Priority: NVENC > VAAPI > VideoToolbox > AMF > QSV > CPU (libx265)
+    """Select the best available encoder.
+
+    Preference order: NVENC > VAAPI > VideoToolbox > AMF > QSV > CPU.
+
+    Returns:
+        Encoder name to use (e.g., "hevc_nvenc" or "libx265").
     """
     priority_chain = [
         "hevc_nvenc",
         "hevc_vaapi",
         "hevc_videotoolbox", 
-        "h264_amf", 
+        "hevc_amf",
         "hevc_qsv"
     ]
     
@@ -100,8 +129,13 @@ def select_best_encoder() -> str:
     return "libx265"
 
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int]]:
-    """
-    Extract video metadata: duration, file size, fps, and audio bitrate.
+    """Probe video metadata.
+
+    Args:
+        input_path: Path to the input media file.
+
+    Returns:
+        Tuple of (duration_seconds, file_size_bytes, fps, audio_kbps), or None on failure.
     """
     ffprobe_exe = get_resource_path("ffprobe")
     try:
@@ -125,8 +159,14 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int]]:
         return None
 
 def get_smart_split_point(input_path: str, duration: float) -> float:
-    """
-    Find optimal keyframe-aligned split point for parallel encoding.
+    """Find a keyframe-aligned split point near the middle.
+
+    Args:
+        input_path: Path to the input media file.
+        duration: Total duration in seconds.
+
+    Returns:
+        Timestamp in seconds to split the encode.
     """
     print("Analyzing for Smart Split point...")
     try:
@@ -147,7 +187,9 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
 # --- Progress Tracking ---
 
 class ProgressTracker:
-    def __init__(self, duration_a, duration_b):
+    """Track progress for two parallel encoding segments."""
+
+    def __init__(self, duration_a: float, duration_b: float) -> None:
         self.dur_a, self.dur_b = duration_a, duration_b
         self.total_dur = duration_a + duration_b
         self.time_a = self.time_b = 0.0
@@ -155,7 +197,15 @@ class ProgressTracker:
         self.spd_a = self.spd_b = 0.001
         self.lock = threading.Lock()
 
-    def update(self, is_a, time_val, fps_val, speed_val):
+    def update(self, is_a: bool, time_val: float, fps_val: float, speed_val: float) -> None:
+        """Update stats for a segment.
+
+        Args:
+            is_a: True for first segment, False for second.
+            time_val: Last parsed encode time in seconds.
+            fps_val: Current frames per second.
+            speed_val: Current encode speed multiplier.
+        """
         with self.lock:
             if is_a:
                 self.time_a = time_val
@@ -166,7 +216,12 @@ class ProgressTracker:
                 if fps_val: self.fps_b = fps_val
                 if speed_val: self.spd_b = speed_val
 
-    def get_stats(self):
+    def get_stats(self) -> Tuple[float, float, int]:
+        """Compute aggregate progress, fps, and ETA.
+
+        Returns:
+            Tuple of (progress_percent, total_fps, eta_seconds).
+        """
         with self.lock:
             t_a = min(self.time_a, self.dur_a)
             t_b = min(self.time_b, self.dur_b)
@@ -177,8 +232,14 @@ class ProgressTracker:
             eta = max(rem_a / self.spd_a, rem_b / self.spd_b)
             return prog, fps, int(eta)
 
-def monitor_process(process, tracker, is_a):
-    """Monitor FFmpeg process stderr and update progress tracker."""
+def monitor_process(process: subprocess.Popen, tracker: ProgressTracker, is_a: bool) -> None:
+    """Monitor an FFmpeg process and update progress.
+
+    Args:
+        process: Running FFmpeg process (stderr expected with progress lines).
+        tracker: Shared tracker to update.
+        is_a: True if this process represents the first segment.
+    """
     re_time = re.compile(r'time=\s*(\d+:\d+:\d+\.\d+)')
     re_fps = re.compile(r'fps=\s*(\d+\.?\d*)')
     re_speed = re.compile(r'speed=\s*(\d+\.?\d*)x')
@@ -210,9 +271,28 @@ def monitor_process(process, tracker, is_a):
 
 # --- Main Logic ---
 
-def encode_single_pass_hw(ffmpeg_exe, input_path, output_path, encoder, bitrate_k, fps, duration):
-    """
-    Handle single-pass encoding for AMF, QSV, VAAPI, VideoToolbox, and CPU fallback.
+def encode_single_pass_hw(
+    ffmpeg_exe: str,
+    input_path: str,
+    output_path: str,
+    encoder: str,
+    bitrate_k: int,
+    fps: float,
+    duration: float,
+) -> bool:
+    """Encode using a single pass for non-NVENC paths.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        input_path: Source video path.
+        output_path: Destination video path.
+        encoder: FFmpeg video encoder name.
+        bitrate_k: Target video bitrate in kbps.
+        fps: Input frames per second.
+        duration: Total duration in seconds (for progress reporting).
+
+    Returns:
+        True on success, False on failure.
     """
     cmd = [ffmpeg_exe, "-y"]
     
@@ -272,7 +352,19 @@ def encode_single_pass_hw(ffmpeg_exe, input_path, output_path, encoder, bitrate_
     return process.returncode == 0
 
 def compress_video(input_path: str, output_path: Optional[str] = None, target_size_mb: int = 100) -> Tuple[bool, str]:
-    """Compress video to target file size using best available hardware encoder."""
+    """Compress a video to an approximate target size.
+
+    Chooses the best available encoder and uses either a parallel 2-pass (NVENC)
+    or a single-pass approach for other encoders.
+
+    Args:
+        input_path: Path to the input video.
+        output_path: Optional output path; defaults to "<name>_<MB>MB<ext>".
+        target_size_mb: Desired approximate size in megabytes.
+
+    Returns:
+        Tuple of (success, output_path_or_error_message).
+    """
     start_t = time.time()
     ffmpeg_exe = get_resource_path("ffmpeg")
     clean_log_file()

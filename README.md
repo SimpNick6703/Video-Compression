@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/0272427b-0db4-40dd-bd14-37d705d110a0
 - In Linux:
   - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
   - Make your downloaded file executable: `chmod +x {size}mb-linux`
-  - Run in terminal as `./{size}mb-linux <input.mp4> [output.mp4]`
+  - Run in terminal as `./{size}mb-linux <input.mp4> [output.mp4] [target_size_in_mb]`
 
 ## How to Build
 
