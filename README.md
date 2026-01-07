@@ -60,7 +60,7 @@ Windows | `hevc_nvenc` -> `hevc_amf` -> `hevc_qsv` -> `libx265` (CPU) | Explicit
 Linux | `hevc_nvenc` -> `hevc_vaapi` -> `libx265` (CPU) | `vaapi` covers both AMD and Intel integrated/dedicated.
 MacOS | `hevc_videotoolbox` -> `libx265` (CPU only) | VideoToolbox automatically handles AMD, Intel, & Apple Silicon. Older Nvidia GPUs aren't used by Nvidia Video Codec SDK on MacOS and handled by VideoToolbox if supported.
 
-Considering the wide variety of hardware configurations, the script uses the following priority logic to select the best available encoder on majority of users' systems:
+Considering the wide variety of hardware configurations, the script uses the following priority logic to select the best available encoder on majority of users' systems (fallback logic):
 > `hevc_nvenc` > `hevc_vaapi` > `hevc_videotoolbox` > `hevc_amf` > `hevc_qsv` > `libx265` (CPU)
 
 > [!NOTE]

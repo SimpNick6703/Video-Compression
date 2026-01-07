@@ -103,22 +103,28 @@ def check_encoder_available(encoder_name: str) -> bool:
         return False
 
 def select_best_encoder() -> str:
-    """Select the best available encoder.
-
-    Preference order: NVENC > VAAPI > VideoToolbox > AMF > QSV > CPU.
+    """Detect the best available encoder based on OS and Hardware.
 
     Returns:
-        Encoder name to use (e.g., "hevc_nvenc" or "libx265").
+        Encoder name (e.g., 'hevc_nvenc') or 'libx265' if none found.
     """
-    priority_chain = [
-        "hevc_nvenc",
-        "hevc_vaapi",
-        "hevc_videotoolbox", 
-        "hevc_amf",
-        "hevc_qsv"
-    ]
-    
-    print("Checking available encoders...")
+    # 1. Determine priority chain based on OS to avoid useless checks
+    if sys.platform.startswith("linux"):
+        # Linux: Nvidia or VAAPI (Intel/AMD)
+        priority_chain = ["hevc_nvenc", "hevc_vaapi"]
+    elif sys.platform == "darwin":
+        # MacOS: VideoToolbox (Standard)
+        priority_chain = ["hevc_videotoolbox"]
+    elif sys.platform == "win32":
+        # Windows: Nvidia -> AMD (AMF) -> Intel (QSV)
+        priority_chain = ["hevc_nvenc", "hevc_amf", "hevc_qsv"]
+    else:
+        # Fallback: Check everything
+        priority_chain = ["hevc_nvenc", "hevc_vaapi", "hevc_videotoolbox", "hevc_amf", "hevc_qsv"]
+
+    print(f"OS: {sys.platform}. Checking encoders: {', '.join(priority_chain)}...")
+
+    # 2. Check each candidate
     for enc in priority_chain:
         is_available = check_encoder_available(enc)
         print(f"  {enc}: {'Available' if is_available else 'Unavailable'}")
