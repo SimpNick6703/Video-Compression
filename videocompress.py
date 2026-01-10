@@ -29,7 +29,7 @@ def get_resource_path(filename: str) -> str:
         Absolute path to the resource, respecting PyInstaller bundling.
     """
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        base_path = sys._MEIPASS
+        base_path = sys._MEIPASS # type: ignore
         if sys.platform == 'win32' and not filename.lower().endswith('.exe'):
             filename = f"{filename}.exe"
         return os.path.join(base_path, filename)
@@ -252,7 +252,7 @@ def monitor_process(process: subprocess.Popen, tracker: ProgressTracker, is_a: b
     
     buf = ""
     while True:
-        char = process.stderr.read(1)
+        char = process.stderr.read(1) # type: ignore
         if not char: break
         
         if char in ('\r', '\n'):
@@ -300,30 +300,17 @@ def encode_single_pass_hw(
     Returns:
         True on success, False on failure.
     """
-    cmd = [ffmpeg_exe, "-y"]
-    
-    # Pre-input flags for VAAPI
-    if encoder == "hevc_vaapi":
-        cmd.extend(["-init_hw_device", "vaapi", "-filter_hw_device", "vaapi"])
-        
-    cmd.extend(["-i", input_path, "-c:v", encoder, "-b:v", f"{bitrate_k}k"])
+    cmd = build_single_pass_cmd(
+        ffmpeg_exe=ffmpeg_exe,
+        input_path=input_path,
+        encoder=encoder,
+        bitrate_k=bitrate_k,
+        fps=fps,
+        start=None,
+        end=None,
+        output_path=output_path,
+    )
 
-    # Encoder specific flags
-    if encoder == "hevc_amf":
-        cmd.extend(["-usage", "transcoding", "-quality", "balanced", "-rc", "cbr"])
-    elif encoder == "hevc_qsv":
-        cmd.extend(["-load_plugin", "hevc_hw", "-preset", "medium"])
-    elif encoder == "hevc_videotoolbox":
-        cmd.extend(["-allow_sw", "1", "-realtime", "0"])
-    elif encoder == "hevc_vaapi":
-        cmd.extend(["-vf", "format=nv12,hwupload"])
-    elif encoder == "libx265":
-        cmd.extend(["-preset", "medium", "-tag:v", "hvc1", "-filter:v", f"fps={fps}"])
-    
-    # Common rate control
-    cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k*2}k"])
-    cmd.extend(["-c:a", "copy", "-loglevel", "error", "-stats", output_path])
-    
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
     
     # Simple single-process monitor
@@ -333,7 +320,7 @@ def encode_single_pass_hw(
     
     try:
         while True:
-            byte = process.stderr.read(1)
+            byte = process.stderr.read(1) # type: ignore
             if not byte: break
             char = byte.decode('utf-8', errors='ignore')
             if char == '\r' or char == '\n':
@@ -357,11 +344,135 @@ def encode_single_pass_hw(
     print()
     return process.returncode == 0
 
+
+def build_single_pass_cmd(
+    ffmpeg_exe: str,
+    input_path: str,
+    encoder: str,
+    bitrate_k: int,
+    fps: float,
+    start: Optional[float],
+    end: Optional[float],
+    output_path: str,
+) -> List[str]:
+    """Build a single-pass FFmpeg command for the requested encoder.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        input_path: Source video path.
+        encoder: FFmpeg encoder name.
+        bitrate_k: Target bitrate in kbps.
+        fps: Source frames per second.
+        start: Optional start time for segmenting.
+        end: Optional end time for segmenting.
+        output_path: Destination video path.
+
+    Returns:
+        A command list ready for subprocess execution.
+    """
+    cmd: List[str] = [ffmpeg_exe, "-y"]
+
+    if encoder == "hevc_vaapi":
+        cmd.extend(["-init_hw_device", "vaapi", "-filter_hw_device", "vaapi"])
+
+    if start is not None:
+        cmd.extend(["-ss", str(start)])
+    if end is not None:
+        cmd.extend(["-to", str(end)])
+
+    cmd.extend(["-i", input_path, "-c:v", encoder, "-b:v", f"{bitrate_k}k"])
+
+    if encoder == "hevc_amf":
+        cmd.extend(["-usage", "transcoding", "-quality", "balanced", "-rc", "cbr"])
+    elif encoder == "hevc_qsv":
+        cmd.extend(["-load_plugin", "hevc_hw", "-preset", "medium"])
+    elif encoder == "hevc_videotoolbox":
+        cmd.extend(["-allow_sw", "1", "-realtime", "0"])
+    elif encoder == "hevc_vaapi":
+        cmd.extend(["-vf", "format=nv12,hwupload"])
+    elif encoder == "libx265":
+        cmd.extend(["-preset", "medium", "-tag:v", "hvc1", "-filter:v", f"fps={fps}"])
+
+    cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k*2}k"])
+    cmd.extend(["-c:a", "copy", "-loglevel", "error", "-stats", output_path])
+    return cmd
+
+
+def encode_split_single_pass_hw(
+    ffmpeg_exe: str,
+    input_path: str,
+    output_path: str,
+    encoder: str,
+    bitrates_k: Tuple[int, int],
+    fps: float,
+    durations: Tuple[float, float],
+    split_time: float,
+) -> Tuple[bool, str]:
+    """Run split single-pass encoding for hardware encoders other than NVENC.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        input_path: Source video path.
+        output_path: Destination file path.
+        encoder: Active hardware encoder.
+        bitrates_k: Tuple of bitrates (kbps) for first and second segments.
+        fps: Source frames per second.
+        durations: Durations of the first and second segments.
+        split_time: Timestamp marking the segment boundary.
+
+    Returns:
+        Tuple of (success flag, error message when unsuccessful).
+    """
+    temp_dir = tempfile.mkdtemp(prefix="vidcomp_hw_")
+    p1_path = os.path.join(temp_dir, "p1.mp4")
+    p2_path = os.path.join(temp_dir, "p2.mp4")
+    list_path = os.path.join(temp_dir, "list.txt")
+
+    try:
+        cmd_a = build_single_pass_cmd(ffmpeg_exe, input_path, encoder, bitrates_k[0], fps, 0, split_time, p1_path)
+        cmd_b = build_single_pass_cmd(ffmpeg_exe, input_path, encoder, bitrates_k[1], fps, split_time, None, p2_path)
+
+        pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=0)
+        pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=0)
+
+        tracker = ProgressTracker(durations[0], durations[1])
+        t1 = threading.Thread(target=monitor_process, args=(pa, tracker, True))
+        t2 = threading.Thread(target=monitor_process, args=(pb, tracker, False))
+        t1.start(); t2.start()
+
+        while pa.poll() is None or pb.poll() is None:
+            prog, fps_total, eta = tracker.get_stats()
+            speed = fps_total / fps if fps > 0 else 0
+            print(f"\rProg: {prog:.1f}% | FPS: {fps_total:.1f} | Speed: {speed:.2f}x | ETA: {eta//3600:02}:{(eta%3600)//60:02}:{eta%60:02}   ", end="")
+            time.sleep(0.5)
+
+        t1.join(); t2.join()
+
+        if pa.returncode != 0 or pb.returncode != 0:
+            return False, "Split encode failed"
+
+        print("\nStitching...")
+        with open(list_path, "w") as lf:
+            lf.write(f"file '{p1_path}'\nfile '{p2_path}'")
+
+        try:
+            subprocess.run([ffmpeg_exe, "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", "-y", output_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            return False, "Stitching failed"
+
+        return True, ""
+    finally:
+        try:
+            shutil.rmtree(temp_dir)
+        except OSError:
+            pass
+
 def compress_video(input_path: str, output_path: Optional[str] = None, target_size_mb: int = 100) -> Tuple[bool, str]:
     """Compress a video to an approximate target size.
 
-    Chooses the best available encoder and uses either a parallel 2-pass (NVENC)
-    or a single-pass approach for other encoders.
+    Chooses the best available encoder and uses either a parallel 2-pass split
+    (NVENC), a split single-pass for other hardware encoders, or a single
+    unsplit pass for CPU (libx265).
 
     Args:
         input_path: Path to the input video.
@@ -489,7 +600,28 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             except OSError: pass
             clean_log_file()
 
-    # --- SERIAL SINGLE-PASS (Other HW / CPU) ---
+    # --- SPLIT SINGLE-PASS FOR OTHER HW ENCODERS ---
+    elif active_encoder in {"hevc_vaapi", "hevc_videotoolbox", "hevc_amf", "hevc_qsv"}:
+        split_time = get_smart_split_point(input_path, duration)
+        print(f"Splitting at {split_time:.2f}s")
+
+        durs = (split_time, duration - split_time)
+        brs: List[int] = []
+
+        tgt_part_mb = target_size_mb / 2
+        for seg_dur in durs:
+            audio_mb = (audio_kbps * seg_dur * 1000) / 8 / MB_TO_BYTES
+            video_mb = max(0.5, tgt_part_mb - audio_mb)
+            br_k = math.floor(((video_mb * MB_TO_BITS) / seg_dur / 1000) * BITRATE_SAFETY_FACTOR)
+            brs.append(br_k)
+
+        print(f"Worker 1: {brs[0]}k | Worker 2: {brs[1]}k")
+        ok, err = encode_split_single_pass_hw(ffmpeg_exe, input_path, output_path, active_encoder, (brs[0], brs[1]), fps, durs, split_time)
+        if not ok:
+            clean_log_file()
+            return False, err
+
+    # --- SERIAL SINGLE-PASS (CPU) ---
     else:
         tgt_bits = target_size_mb * MB_TO_BITS
         vid_bits = max(0, tgt_bits - (audio_kbps * 1000 * duration))
