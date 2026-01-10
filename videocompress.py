@@ -373,8 +373,7 @@ def build_single_pass_cmd(
     cmd: List[str] = [ffmpeg_exe, "-y"]
 
     if encoder == "hevc_vaapi":
-        cmd.extend(["-init_hw_device", "vaapi"])
-        cmd.extend(["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"])
+        cmd.extend(["-init_hw_device", "vaapi", "-hwaccel", "vaapi"])
     
     elif encoder == "hevc_amf":
         cmd.extend(["-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11"])
@@ -393,6 +392,8 @@ def build_single_pass_cmd(
         cmd.extend(["-usage", "transcoding", "-quality", "balanced", "-rc", "cbr"])
     elif encoder == "hevc_qsv":
         cmd.extend(["-load_plugin", "hevc_hw", "-preset", "medium"])
+    elif encoder == "hevc_vaapi":
+        cmd.extend(["-vf", "format=nv12,hwupload"])
     elif encoder == "hevc_videotoolbox":
         cmd.extend(["-allow_sw", "1", "-realtime", "0"])
     elif encoder == "libx265":
