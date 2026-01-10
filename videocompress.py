@@ -373,7 +373,14 @@ def build_single_pass_cmd(
     cmd: List[str] = [ffmpeg_exe, "-y"]
 
     if encoder == "hevc_vaapi":
-        cmd.extend(["-init_hw_device", "vaapi", "-filter_hw_device", "vaapi"])
+        cmd.extend(["-init_hw_device", "vaapi"])
+        cmd.extend(["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"])
+    
+    elif encoder == "hevc_amf":
+        cmd.extend(["-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11"])
+        
+    elif encoder == "hevc_qsv":
+        cmd.extend(["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"])
 
     if start is not None:
         cmd.extend(["-ss", str(start)])
@@ -388,8 +395,6 @@ def build_single_pass_cmd(
         cmd.extend(["-load_plugin", "hevc_hw", "-preset", "medium"])
     elif encoder == "hevc_videotoolbox":
         cmd.extend(["-allow_sw", "1", "-realtime", "0"])
-    elif encoder == "hevc_vaapi":
-        cmd.extend(["-vf", "format=nv12,hwupload"])
     elif encoder == "libx265":
         cmd.extend(["-preset", "medium", "-tag:v", "hvc1", "-filter:v", f"fps={fps}"])
 
@@ -526,7 +531,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
         log_b = os.path.join(temp_dir, "log_part2")
         
         try:
-            base = [ffmpeg_exe, "-hwaccel", "cuda", "-y", "-hide_banner", "-loglevel", "error", "-stats"]
+            base = [ffmpeg_exe, "-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-y", "-hide_banner", "-loglevel", "error", "-stats"]
 
             # PASS 1
             print("Parallel Pass 1/2: Analysis...")
