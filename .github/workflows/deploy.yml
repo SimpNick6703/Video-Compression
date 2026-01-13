@@ -1,12 +1,9 @@
-name: Deploy to GitHub Pages
+name: Deploy Video Compressor to Pages
 
 on:
   push:
-    branches:
-      - git-page
-    paths:
-      - 'docs/**'
-      - '.github/workflows/deploy.yml'
+    branches: ["webpage"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,11 +11,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: "pages"
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -27,13 +24,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: docs/package.json
+
+      - name: Install dependencies and build
+        run: |
+          cd docs
+          npm install
+          npx tsc
+          mkdir -p lib/ffmpeg lib/util
+          cp node_modules/mp4-muxer/build/mp4-muxer.js lib/
+          cp node_modules/@ffmpeg/ffmpeg/dist/esm/*.js lib/ffmpeg/
+          cp node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js lib/ffmpeg/
+          cp node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm lib/ffmpeg/
+          cp node_modules/@ffmpeg/util/dist/esm/*.js lib/util/
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'docs'
+          path: './docs'
 
       - name: Deploy to GitHub Pages
         id: deployment
