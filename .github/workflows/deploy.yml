@@ -2,7 +2,7 @@ name: Deploy Video Compressor to Pages
 
 on:
   push:
-    branches: ["webpage"]
+    branches: ["git-page"]
   workflow_dispatch:
 
 permissions:
