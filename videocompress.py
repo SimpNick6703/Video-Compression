@@ -90,7 +90,7 @@ def check_encoder_available(encoder_name: str) -> bool:
     try:
         # VAAPI often requires hwupload for software sources
         vf_args = ["-vf", "format=nv12,hwupload"] if encoder_name == "hevc_vaapi" else []
-        pre_args = ["-init_hw_device", "vaapi", "-filter_hw_device", "vaapi"] if encoder_name == "hevc_vaapi" else []
+        pre_args = ["-init_hw_device", "vaapi"] if encoder_name == "hevc_vaapi" else []
         
         cmd = [ffmpeg_exe, "-hide_banner", "-v", "error"] + pre_args + [
             "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1", 
@@ -373,7 +373,7 @@ def build_single_pass_cmd(
     cmd: List[str] = [ffmpeg_exe, "-y"]
 
     if encoder == "hevc_vaapi":
-        cmd.extend(["-init_hw_device", "vaapi", "-filter_hw_device", "vaapi"])
+        cmd.extend(["-init_hw_device", "vaapi"])
 
     if start is not None:
         cmd.extend(["-ss", str(start)])
