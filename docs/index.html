@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Compressor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {}
+            }
+        }
+    </script>
+</head>
+<body class="dark bg-gray-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold mb-2">Video Compressor</h1>
+            <p class="text-gray-400">Hardware-accelerated video compression in your browser</p>
+        </header>
+
+        <main class="space-y-6">
+            <div class="bg-gray-800 rounded-lg p-6">
+                <label class="block mb-4">
+                    <span class="text-sm font-medium mb-2 block">Select video file:</span>
+                    <div class="relative">
+                        <input 
+                            type="file" 
+                            id="videoInput" 
+                            accept="video/*"
+                            class="block w-full text-sm text-gray-400
+                                file:mr-4 file:py-2 file:px-4
+                                file:rounded-lg file:border-0
+                                file:text-sm file:font-semibold
+                                file:bg-blue-600 file:text-white
+                                hover:file:bg-blue-700 file:cursor-pointer
+                                cursor-pointer"
+                        />
+                    </div>
+                    <div id="selectedFile" class="mt-2 text-sm text-gray-400"></div>
+                </label>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <label class="block">
+                        <span class="text-sm font-medium mb-2 block">Target filesize:</span>
+                        <select 
+                            id="targetSize" 
+                            class="block w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                            <option value="8">8 MB</option>
+                            <option value="50">50 MB</option>
+                            <option value="100" selected>100 MB</option>
+                            <option value="500">500 MB</option>
+                            <option value="custom">Custom...</option>
+                        </select>
+                        <input 
+                            type="number" 
+                            id="customSize" 
+                            placeholder="Enter MB"
+                            class="mt-2 hidden block w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            min="1"
+                        />
+                    </label>
+
+                    <label class="block">
+                        <span class="text-sm font-medium mb-2 block">Resolution:</span>
+                        <select 
+                            id="resolution" 
+                            class="block w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                            <option value="original">Original</option>
+                            <option value="2160">4K (2160p)</option>
+                            <option value="1440">2K (1440p)</option>
+                            <option value="1080">Full HD (1080p)</option>
+                            <option value="720" selected>HD (720p)</option>
+                            <option value="480">SD (480p)</option>
+                            <option value="360">360p</option>
+                        </select>
+                    </label>
+                </div>
+
+                <button 
+                    id="compressBtn"
+                    class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                    disabled
+                >
+                    Compress
+                </button>
+            </div>
+
+            <div id="statusCard" class="bg-gray-800 rounded-lg p-6 hidden">
+                <div class="mb-4">
+                    <div class="flex justify-between text-sm mb-2">
+                        <span id="statusText">Status: Encoding...</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                        <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div id="statsInfo" class="text-sm text-gray-400 space-y-1"></div>
+            </div>
+
+            <div id="resultCard" class="bg-gray-800 rounded-lg p-6 hidden">
+                <h2 class="text-xl font-semibold mb-4">Compression Complete</h2>
+                <div id="resultStats" class="space-y-2 text-sm mb-4"></div>
+                <button 
+                    id="downloadBtn"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                >
+                    Download Compressed Video
+                </button>
+            </div>
+
+            <div id="errorCard" class="bg-red-900/20 border border-red-800 rounded-lg p-6 hidden">
+                <h2 class="text-xl font-semibold text-red-400 mb-2">Error</h2>
+                <p id="errorText" class="text-gray-300"></p>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-lg font-semibold mb-3">Browser Compatibility</h2>
+                <div id="compatInfo" class="space-y-2 text-sm"></div>
+            </div>
+        </main>
+
+        <footer class="mt-12 text-center text-sm text-gray-500">
+            <p>Uses WebCodecs API for hardware-accelerated video processing</p>
+        </footer>
+    </div>
+
+    <script src="lib/mp4-muxer.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "@ffmpeg/ffmpeg": "./lib/ffmpeg/index.js",
+            "@ffmpeg/util": "./lib/util/index.js"
+        }
+    }
+    </script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
