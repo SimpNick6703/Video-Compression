@@ -30,6 +30,12 @@ https://github.com/user-attachments/assets/0272427b-0db4-40dd-bd14-37d705d110a0
   - Make your downloaded file executable: `chmod +x {size}mb-linux`
   - Run in terminal as `./{size}mb-linux <input.mp4> [output.mp4] [target_size_in_mb]`
 
+- From GitHub Page:
+  - Visit the [GitHub Page](https://simpnick6703.github.io/Video-Compression/) for an online version of this tool.
+  - Do note that it will be using your browser's resources, uses your hardware but will be extremely slow compared to native execution.
+  - Audio will not be present in the output from this transcoding method.
+  - If you're on a mobile device, configure your background apps permissions for the browser to prevent it from being killed during the process.
+
 ## How to Build
 
 To build the preset executables yourself:
