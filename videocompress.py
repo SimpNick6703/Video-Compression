@@ -15,6 +15,7 @@ from typing import Tuple, Optional, List
 MB_TO_BYTES = 1024 * 1024
 MB_TO_BITS = 8 * 1024 * 1024
 BITRATE_SAFETY_FACTOR = 0.90
+MIN_BPP = 0.04  # Target Bits Per Pixel threshold
 LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"] 
 
 # --- Helpers ---
@@ -134,21 +135,36 @@ def select_best_encoder() -> str:
     print("  No hardware encoder found. Fallback to CPU.")
     return "libx265"
 
-def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int]]:
+def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
     """Probe video metadata.
 
     Args:
         input_path: Path to the input media file.
 
     Returns:
-        Tuple of (duration_seconds, file_size_bytes, fps, audio_kbps), or None on failure.
+        Tuple of (duration_seconds, file_size_bytes, fps, audio_kbps, width, height), or None on failure.
     """
     ffprobe_exe = get_resource_path("ffprobe")
     try:
-        cmd_base = [ffprobe_exe, "-v", "error", "-select_streams", "v:0", "-of", "default=noprint_wrappers=1:nokey=1"]
-        fps_out = subprocess.check_output(cmd_base + ["-show_entries", "stream=avg_frame_rate", input_path], text=True).strip()
-        dur_out = subprocess.check_output(cmd_base + ["-show_entries", "format=duration", input_path], text=True).strip()
+        # Get metadata as JSON
+        cmd = [ffprobe_exe, "-v", "error", "-select_streams", "v:0",
+               "-show_entries", "stream=width,height,avg_frame_rate", 
+               "-show_entries", "format=duration", "-of", "json", input_path]
+        res = json.loads(subprocess.check_output(cmd, text=True))
         
+        v_stream = res['streams'][0]
+        width = int(v_stream.get('width', 0))
+        height = int(v_stream.get('height', 0))
+        dur_out = res['format'].get('duration', 0)
+        
+        fps_val = v_stream.get('avg_frame_rate', '30/1')
+        if '/' in fps_val:
+            num, den = map(int, fps_val.split('/'))
+            fps = num / den if den > 0 else 30
+        else:
+            fps = float(fps_val)
+        
+        # Audio probe
         cmd_aud = [ffprobe_exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
         try:
             aud_out = subprocess.check_output(cmd_aud, text=True).strip()
@@ -156,12 +172,8 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int]]:
         except subprocess.CalledProcessError:
             audio_bps = 128000 # Default if no audio stream found or probe fails
             
-        if not fps_out or '/' not in fps_out: return None
-        num, den = map(int, fps_out.split('/'))
-        fps = num / den
-        
-        return float(dur_out), get_file_size(input_path), fps, math.ceil(audio_bps / 1000)
-    except (subprocess.CalledProcessError, ValueError, OSError):
+        return float(dur_out), get_file_size(input_path), fps, math.ceil(audio_bps / 1000), width, height
+    except (subprocess.CalledProcessError, ValueError, OSError, KeyError, IndexError):
         return None
 
 def get_smart_split_point(input_path: str, duration: float) -> float:
@@ -189,6 +201,61 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
             if curr >= target: return last_k if last_k > 0 else duration/2
     except (json.JSONDecodeError, KeyError, ValueError, OSError): pass
     return duration / 2
+
+def get_optimal_settings(target_mb: int, duration: float, width: int, height: int, fps: float) -> Tuple[int, float]:
+    """
+    Determines optimal Height and FPS based on BPP and gaming priorities.
+    Returns: (target_height, target_fps)
+    """
+    target_bits = target_mb * MB_TO_BITS
+    aspect_ratio = width / height
+    
+    height_options = [2160, 1440, 1080, 720]
+    fps_options = [120.0, 90.0, 60.0]
+
+    # 1. Filter Options (Never Upscale)
+    valid_heights = [h for h in height_options if h <= height]
+    # Ensure if source is 1080p, 1440p is invalid.
+    if height not in valid_heights: valid_heights.insert(0, height)
+    
+    valid_fps = [f for f in fps_options if f <= fps]
+    if fps not in valid_fps: valid_fps.insert(0, fps)
+
+    # 2. Generate All Valid Candidates (BPP >= Floor)
+    candidates = [] # List of tuples: (fps_priority, pixels_throughput, h, f)
+    
+    for h in valid_heights:
+        # Calculate width maintaining aspect ratio (approx) for pixel math
+        w = int(h * aspect_ratio)
+        
+        for f in valid_fps:
+            pixels_per_sec = w * h * f
+            if pixels_per_sec == 0: continue
+            
+            bpp = target_bits / (duration * pixels_per_sec)
+            
+            if bpp >= MIN_BPP:
+                # Priority Logic:
+                # 1. FPS Priority: True if FPS >= 60. (Gaming preference)
+                # 2. Throughput: Resolution * FPS (General quality metric)
+                fps_priority = (f >= 60)
+                candidates.append((fps_priority, pixels_per_sec, h, f))
+
+    # 3. Sort Logic
+    if candidates:
+        # Sort by:
+        # Primary: FPS >= 60 (True > False)
+        # Secondary: Throughput (Higher is better)
+        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        
+        best = candidates[0]
+        # If the best option is basically the source, return source values to avoid filter overhead
+        if best[2] == height and best[3] == fps:
+            return height, fps
+        return best[2], best[3]
+
+    # Fallback: Smallest possible valid config
+    return valid_heights[-1], valid_fps[-1]
 
 # --- Progress Tracking ---
 
@@ -285,6 +352,8 @@ def encode_single_pass_hw(
     bitrate_k: int,
     fps: float,
     duration: float,
+    tgt_h: int,
+    tgt_fps: float
 ) -> bool:
     """Encode using a single pass for non-NVENC paths.
 
@@ -296,6 +365,8 @@ def encode_single_pass_hw(
         bitrate_k: Target video bitrate in kbps.
         fps: Input frames per second.
         duration: Total duration in seconds (for progress reporting).
+        tgt_h: Target height for scaling.
+        tgt_fps: Target frames per second.
 
     Returns:
         True on success, False on failure.
@@ -305,12 +376,12 @@ def encode_single_pass_hw(
         input_path=input_path,
         encoder=encoder,
         bitrate_k=bitrate_k,
-        fps=fps,
+        src_fps=fps,
         start=None,
         end=None,
         output_path=output_path,
-    )
-
+        tgt_h=tgt_h,
+        tgt_fps=tgt_fps)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
     
     # Simple single-process monitor
@@ -350,10 +421,12 @@ def build_single_pass_cmd(
     input_path: str,
     encoder: str,
     bitrate_k: int,
-    fps: float,
+    src_fps: float,
     start: Optional[float],
     end: Optional[float],
     output_path: str,
+    tgt_h: int, 
+    tgt_fps: float
 ) -> List[str]:
     """Build a single-pass FFmpeg command for the requested encoder.
 
@@ -362,15 +435,18 @@ def build_single_pass_cmd(
         input_path: Source video path.
         encoder: FFmpeg encoder name.
         bitrate_k: Target bitrate in kbps.
-        fps: Source frames per second.
+        src_fps: Source frames per second.
         start: Optional start time for segmenting.
         end: Optional end time for segmenting.
         output_path: Destination video path.
+        tgt_h: Target height for scaling.
+        tgt_fps: Target frames per second.
 
     Returns:
         A command list ready for subprocess execution.
     """
     cmd: List[str] = [ffmpeg_exe, "-y"]
+    filters = []
 
     if encoder == "hevc_vaapi":
         cmd.extend(["-init_hw_device", "vaapi"])
@@ -380,7 +456,27 @@ def build_single_pass_cmd(
     if end is not None:
         cmd.extend(["-to", str(end)])
 
-    cmd.extend(["-i", input_path, "-c:v", encoder, "-b:v", f"{bitrate_k}k"])
+    cmd.extend(["-i", input_path])
+    
+    # Build Filters
+    if tgt_fps < src_fps: filters.append(f"fps={tgt_fps}")
+    
+    # Scale Filter: -2:height ensures width is even (divisible by 2) while keeping aspect ratio
+    # If using -1, encoders often fail with odd pixel counts (e.g. 853x480). -2 gives 854x480.
+    if tgt_h > 0: filters.append(f"scale=-2:{tgt_h}")
+    
+    # Encoder Specific Filter Chains
+    if encoder == "hevc_vaapi":
+        filters.append("format=nv12,hwupload")
+        cmd.extend(["-vf", ",".join(filters)] if filters else ["-vf", "format=nv12,hwupload"])
+    elif encoder == "libx265":
+        # x265 requires fps filter sometimes for retiming
+        if not any("fps" in f for f in filters): filters.append(f"fps={src_fps}")
+        cmd.extend(["-vf", ",".join(filters)])
+    else:
+        if filters: cmd.extend(["-vf", ",".join(filters)])
+
+    cmd.extend(["-c:v", encoder, "-b:v", f"{bitrate_k}k"])
 
     if encoder == "hevc_amf":
         cmd.extend(["-usage", "transcoding", "-quality", "balanced", "-rc", "cbr"])
@@ -388,10 +484,8 @@ def build_single_pass_cmd(
         cmd.extend(["-load_plugin", "hevc_hw", "-preset", "medium"])
     elif encoder == "hevc_videotoolbox":
         cmd.extend(["-allow_sw", "1", "-realtime", "0"])
-    elif encoder == "hevc_vaapi":
-        cmd.extend(["-vf", "format=nv12,hwupload"])
     elif encoder == "libx265":
-        cmd.extend(["-preset", "medium", "-tag:v", "hvc1", "-filter:v", f"fps={fps}"])
+        cmd.extend(["-preset", "medium", "-tag:v", "hvc1"])
 
     cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k*2}k"])
     cmd.extend(["-c:a", "copy", "-loglevel", "error", "-stats", output_path])
@@ -407,6 +501,8 @@ def encode_split_single_pass_hw(
     fps: float,
     durations: Tuple[float, float],
     split_time: float,
+    tgt_h: int,
+    tgt_fps: float
 ) -> Tuple[bool, str]:
     """Run split single-pass encoding for hardware encoders other than NVENC.
 
@@ -419,6 +515,8 @@ def encode_split_single_pass_hw(
         fps: Source frames per second.
         durations: Durations of the first and second segments.
         split_time: Timestamp marking the segment boundary.
+        tgt_h: Target height for scaling.
+        tgt_fps: Target frames per second.
 
     Returns:
         Tuple of (success flag, error message when unsuccessful).
@@ -429,8 +527,8 @@ def encode_split_single_pass_hw(
     list_path = os.path.join(temp_dir, "list.txt")
 
     try:
-        cmd_a = build_single_pass_cmd(ffmpeg_exe, input_path, encoder, bitrates_k[0], fps, 0, split_time, p1_path)
-        cmd_b = build_single_pass_cmd(ffmpeg_exe, input_path, encoder, bitrates_k[1], fps, split_time, None, p2_path)
+        cmd_a = build_single_pass_cmd(ffmpeg_exe, input_path, encoder, bitrates_k[0], fps, 0, split_time, p1_path, tgt_h, tgt_fps)
+        cmd_b = build_single_pass_cmd(ffmpeg_exe, input_path, encoder, bitrates_k[1], fps, split_time, None, p2_path, tgt_h, tgt_fps)
 
         pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=0)
         pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=0)
@@ -490,13 +588,22 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     
     info = get_video_info(input_path)
     if not info: return False, f"Failed to extract video info from: {input_path}"
-    duration, orig_bytes, fps, audio_kbps = info
+    duration, orig_bytes, fps, audio_kbps, src_w, src_h = info
     
     if (orig_bytes / MB_TO_BYTES) <= target_size_mb:
         return False, f"Already smaller: {orig_bytes/MB_TO_BYTES:.2f} MB"
 
     if output_path is None:
         output_path = str(Path(input_path).with_name(f"{Path(input_path).stem}_{target_size_mb}MB{Path(input_path).suffix}"))
+
+    # Decision Algorithm: Optimize Res/FPS
+    opt_h, opt_fps = get_optimal_settings(target_size_mb, duration, src_w, src_h, fps)
+    
+    # Calculate opt_w just for logging (approx)
+    opt_w_log = int(opt_h * (src_w/src_h))
+    
+    if opt_h != src_h or opt_fps != fps:
+        print(f"Optimizing: {src_w}x{src_h}@{fps:.2f} -> ~{opt_w_log}x{opt_h}@{opt_fps:.2f}")
 
     active_encoder = select_best_encoder()
     print(f"Active Encoder: {active_encoder}")
@@ -526,7 +633,14 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
         log_b = os.path.join(temp_dir, "log_part2")
         
         try:
+            # Build filters for NVENC
+            filters = []
+            if opt_fps < fps: filters.append(f"fps={opt_fps}")
+            if opt_h < src_h: filters.append(f"scale=-2:{opt_h}")
+            
             base = [ffmpeg_exe, "-hwaccel", "cuda", "-y", "-hide_banner", "-loglevel", "error", "-stats"]
+
+            vf_args = ["-vf", ",".join(filters)] if filters else []
 
             # PASS 1
             print("Parallel Pass 1/2: Analysis...")
@@ -616,7 +730,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             brs.append(br_k)
 
         print(f"Worker 1: {brs[0]}k | Worker 2: {brs[1]}k")
-        ok, err = encode_split_single_pass_hw(ffmpeg_exe, input_path, output_path, active_encoder, (brs[0], brs[1]), fps, durs, split_time)
+        ok, err = encode_split_single_pass_hw(ffmpeg_exe, input_path, output_path, active_encoder, (brs[0], brs[1]), fps, durs, split_time, opt_h, opt_fps)
         if not ok:
             clean_log_file()
             return False, err
@@ -628,7 +742,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
         vid_br = math.floor(((vid_bits / duration) / 1000) * BITRATE_SAFETY_FACTOR)
         
         print(f"Encoding Single Pass. Target: {vid_br}k")
-        success = encode_single_pass_hw(ffmpeg_exe, input_path, output_path, active_encoder, vid_br, fps, duration)
+        success = encode_single_pass_hw(ffmpeg_exe, input_path, output_path, active_encoder, vid_br, fps, duration, opt_h, opt_fps)
         if not success: return False, "Encode Failed"
 
     clean_log_file()
