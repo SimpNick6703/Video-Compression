@@ -184,7 +184,8 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
         duration: Total duration in seconds.
 
     Returns:
-        Timestamp in seconds to split the encode.
+        Timestamp in seconds to split the encode. Falls back to duration/2
+        if keyframe analysis fails or no suitable keyframe is found.
     """
     print("Analyzing for Smart Split point...")
     try:
@@ -203,9 +204,21 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
     return duration / 2
 
 def get_optimal_settings(target_mb: int, duration: float, width: int, height: int, fps: float) -> Tuple[int, float]:
-    """
-    Determines optimal Height and FPS based on BPP and gaming priorities.
-    Returns: (target_height, target_fps)
+    """Determine optimal resolution and frame rate based on bits-per-pixel threshold.
+
+    Prioritizes maintaining 60+ FPS for gaming content while ensuring visual
+    quality stays above MIN_BPP threshold.
+
+    Args:
+        target_mb: Target file size in megabytes.
+        duration: Video duration in seconds.
+        width: Source video width in pixels.
+        height: Source video height in pixels.
+        fps: Source video frame rate.
+
+    Returns:
+        Tuple of (target_height, target_fps). Values will never exceed source
+        dimensions. Returns source values if no scaling is needed.
     """
     target_bits = target_mb * MB_TO_BITS
     aspect_ratio = width / height
@@ -260,9 +273,39 @@ def get_optimal_settings(target_mb: int, duration: float, width: int, height: in
 # --- Progress Tracking ---
 
 class ProgressTracker:
-    """Track progress for two parallel encoding segments."""
+    """Track progress for two parallel encoding segments.
+
+    Attributes:
+        dur_a: Duration of first segment in seconds.
+        dur_b: Duration of second segment in seconds.
+        total_dur: Combined duration of both segments.
+        time_a: Current encoded time for first segment.
+        time_b: Current encoded time for second segment.
+        fps_a: Current FPS for first segment encoder.
+        fps_b: Current FPS for second segment encoder.
+        spd_a: Current speed multiplier for first segment.
+        spd_b: Current speed multiplier for second segment.
+        lock: Threading lock for thread-safe updates.
+    """
+
+    dur_a: float
+    dur_b: float
+    total_dur: float
+    time_a: float
+    time_b: float
+    fps_a: float
+    fps_b: float
+    spd_a: float
+    spd_b: float
+    lock: threading.Lock
 
     def __init__(self, duration_a: float, duration_b: float) -> None:
+        """Initialize the progress tracker.
+
+        Args:
+            duration_a: Duration of first segment in seconds.
+            duration_b: Duration of second segment in seconds.
+        """
         self.dur_a, self.dur_b = duration_a, duration_b
         self.total_dur = duration_a + duration_b
         self.time_a = self.time_b = 0.0
@@ -305,8 +348,11 @@ class ProgressTracker:
             eta = max(rem_a / self.spd_a, rem_b / self.spd_b)
             return prog, fps, int(eta)
 
-def monitor_process(process: subprocess.Popen, tracker: ProgressTracker, is_a: bool) -> None:
+def monitor_process(process: subprocess.Popen[str], tracker: ProgressTracker, is_a: bool) -> None:
     """Monitor an FFmpeg process and update progress.
+
+    Reads FFmpeg's stderr output character by character, parses progress
+    information (time, fps, speed), and updates the shared tracker.
 
     Args:
         process: Running FFmpeg process (stderr expected with progress lines).
@@ -425,7 +471,7 @@ def build_single_pass_cmd(
     start: Optional[float],
     end: Optional[float],
     output_path: str,
-    tgt_h: int, 
+    tgt_h: int,
     tgt_fps: float
 ) -> List[str]:
     """Build a single-pass FFmpeg command for the requested encoder.
@@ -439,8 +485,10 @@ def build_single_pass_cmd(
         start: Optional start time for segmenting.
         end: Optional end time for segmenting.
         output_path: Destination video path.
-        tgt_h: Target height for scaling.
-        tgt_fps: Target frames per second.
+        tgt_h: Target height for scaling. Uses -2:height format to ensure
+            even width. Set to 0 or equal to source height to skip scaling.
+        tgt_fps: Target frames per second. Set equal to src_fps to skip
+            FPS conversion.
 
     Returns:
         A command list ready for subprocess execution.
@@ -510,12 +558,13 @@ def encode_split_single_pass_hw(
         ffmpeg_exe: Path to the ffmpeg executable.
         input_path: Source video path.
         output_path: Destination file path.
-        encoder: Active hardware encoder.
-        bitrates_k: Tuple of bitrates (kbps) for first and second segments.
-        fps: Source frames per second.
-        durations: Durations of the first and second segments.
-        split_time: Timestamp marking the segment boundary.
-        tgt_h: Target height for scaling.
+        encoder: Active hardware encoder name (e.g., 'hevc_vaapi').
+        bitrates_k: Tuple of (first_segment_kbps, second_segment_kbps).
+        fps: Source frames per second (used for progress calculation).
+        durations: Tuple of (first_segment_duration, second_segment_duration)
+            in seconds.
+        split_time: Timestamp in seconds marking the segment boundary.
+        tgt_h: Target height for scaling (0 to skip scaling).
         tgt_fps: Target frames per second.
 
     Returns:
