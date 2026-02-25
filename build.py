@@ -186,7 +186,7 @@ def create_preset_script(target_mb: int, temp_dir: str) -> str:
     # Update the usage message to reflect the preset
     content = re.sub(
         r'print\("Usage: python script\.py <input> \[output\] \[size_mb\]"\)',
-        f'print("Usage: {target_mb}mb <input> [output]")',
+        f'print("Usage: {target_mb}mb <input> [output] [size_mb]")',
         content
     )
     
@@ -200,7 +200,13 @@ def create_preset_script(target_mb: int, temp_dir: str) -> str:
 def build_executable(script_path: str, target_mb: int) -> bool:
     """Build a single executable using PyInstaller."""
     platform_suffix = get_platform_suffix()
-    output_name = f"{target_mb}mb-{platform_suffix}"
+    
+    version = os.environ.get("BUILD_VERSION")
+    if version:
+        safe_version = re.sub(r'[\\/*?:"<>|]', '_', version)
+        output_name = f"{target_mb}mb-{safe_version}-{platform_suffix}"
+    else:
+        output_name = f"{target_mb}mb-{platform_suffix}"
     
     log.info("Building %s...", output_name)
     
