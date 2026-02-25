@@ -17,6 +17,7 @@ MB_TO_BITS = 8 * 1024 * 1024
 BITRATE_SAFETY_FACTOR = 0.90
 MIN_BPP = 0.04  # Target Bits Per Pixel threshold
 LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"] 
+CODEC_TYPE = "hevc" # Options: "hevc", "h264"
 
 # --- Helpers ---
 
@@ -90,8 +91,9 @@ def check_encoder_available(encoder_name: str) -> bool:
     ffmpeg_exe = get_resource_path("ffmpeg")
     try:
         # VAAPI often requires hwupload for software sources
-        vf_args = ["-vf", "format=nv12,hwupload"] if encoder_name == "hevc_vaapi" else []
-        pre_args = ["-init_hw_device", "vaapi"] if encoder_name == "hevc_vaapi" else []
+        is_vaapi = "vaapi" in encoder_name
+        vf_args = ["-vf", "format=nv12,hwupload"] if is_vaapi else []
+        pre_args = ["-init_hw_device", "vaapi"] if is_vaapi else []
         
         cmd = [ffmpeg_exe, "-hide_banner", "-v", "error"] + pre_args + [
             "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1", 
@@ -110,20 +112,29 @@ def select_best_encoder() -> str:
         Encoder name (e.g., 'hevc_nvenc') or 'libx265' if none found.
     """
     # 1. Determine priority chain based on OS to avoid useless checks
-    if sys.platform.startswith("linux"):
-        # Linux: Nvidia or VAAPI (Intel/AMD)
-        priority_chain = ["hevc_nvenc", "hevc_vaapi"]
-    elif sys.platform == "darwin":
-        # MacOS: VideoToolbox (Standard)
-        priority_chain = ["hevc_videotoolbox"]
-    elif sys.platform == "win32":
-        # Windows: Nvidia -> AMD (AMF) -> Intel (QSV)
-        priority_chain = ["hevc_nvenc", "hevc_amf", "hevc_qsv"]
+    if CODEC_TYPE == "h264":
+        if sys.platform.startswith("linux"):
+            priority_chain = ["h264_nvenc", "h264_vaapi"]
+        elif sys.platform == "darwin":
+            priority_chain = ["h264_videotoolbox"]
+        elif sys.platform == "win32":
+            priority_chain = ["h264_nvenc", "h264_amf", "h264_qsv"]
+        else:
+            priority_chain = ["h264_nvenc", "h264_vaapi", "h264_videotoolbox", "h264_amf", "h264_qsv"]
+        fallback = "libx264"
     else:
-        # Fallback: Check everything
-        priority_chain = ["hevc_nvenc", "hevc_vaapi", "hevc_videotoolbox", "hevc_amf", "hevc_qsv"]
+        # HEVC
+        if sys.platform.startswith("linux"):
+            priority_chain = ["hevc_nvenc", "hevc_vaapi"]
+        elif sys.platform == "darwin":
+            priority_chain = ["hevc_videotoolbox"]
+        elif sys.platform == "win32":
+            priority_chain = ["hevc_nvenc", "hevc_amf", "hevc_qsv"]
+        else:
+            priority_chain = ["hevc_nvenc", "hevc_vaapi", "hevc_videotoolbox", "hevc_amf", "hevc_qsv"]
+        fallback = "libx265"
 
-    print(f"OS: {sys.platform}. Checking encoders: {', '.join(priority_chain)}...")
+    print(f"OS: {sys.platform}. Codec: {CODEC_TYPE}. Checking encoders: {', '.join(priority_chain)}...")
 
     # 2. Check each candidate
     for enc in priority_chain:
@@ -132,8 +143,8 @@ def select_best_encoder() -> str:
         if is_available:
             return enc
     
-    print("  No hardware encoder found. Fallback to CPU.")
-    return "libx265"
+    print(f"  No hardware encoder found. Fallback to CPU ({fallback}).")
+    return fallback
 
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
     """Probe video metadata.
@@ -496,7 +507,7 @@ def build_single_pass_cmd(
     cmd: List[str] = [ffmpeg_exe, "-y"]
     filters = []
 
-    if encoder == "hevc_vaapi":
+    if "vaapi" in encoder:
         cmd.extend(["-init_hw_device", "vaapi"])
 
     if start is not None:
@@ -514,11 +525,14 @@ def build_single_pass_cmd(
     if tgt_h > 0: filters.append(f"scale=-2:{tgt_h}")
     
     # Encoder Specific Filter Chains
-    if encoder == "hevc_vaapi":
+    if "vaapi" in encoder:
         filters.append("format=nv12,hwupload")
         cmd.extend(["-vf", ",".join(filters)] if filters else ["-vf", "format=nv12,hwupload"])
     elif encoder == "libx265":
         # x265 requires fps filter sometimes for retiming
+        if not any("fps" in f for f in filters): filters.append(f"fps={src_fps}")
+        cmd.extend(["-vf", ",".join(filters)])
+    elif encoder == "libx264":
         if not any("fps" in f for f in filters): filters.append(f"fps={src_fps}")
         cmd.extend(["-vf", ",".join(filters)])
     else:
@@ -526,14 +540,17 @@ def build_single_pass_cmd(
 
     cmd.extend(["-c:v", encoder, "-b:v", f"{bitrate_k}k"])
 
-    if encoder == "hevc_amf":
+    if "amf" in encoder:
         cmd.extend(["-usage", "transcoding", "-quality", "balanced", "-rc", "cbr"])
-    elif encoder == "hevc_qsv":
-        cmd.extend(["-load_plugin", "hevc_hw", "-preset", "medium"])
-    elif encoder == "hevc_videotoolbox":
+    elif "qsv" in encoder:
+        if "hevc" in encoder: cmd.extend(["-load_plugin", "hevc_hw"])
+        cmd.extend(["-preset", "medium"])
+    elif "videotoolbox" in encoder:
         cmd.extend(["-allow_sw", "1", "-realtime", "0"])
     elif encoder == "libx265":
         cmd.extend(["-preset", "medium", "-tag:v", "hvc1"])
+    elif encoder == "libx264":
+        cmd.extend(["-preset", "medium"])
 
     cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k*2}k"])
     cmd.extend(["-c:a", "copy", "-loglevel", "error", "-stats", output_path])
@@ -658,7 +675,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     print(f"Active Encoder: {active_encoder}")
 
     # --- NVENC SPECIFIC: PARALLEL 2-PASS ---
-    if active_encoder == "hevc_nvenc":
+    if "nvenc" in active_encoder:
         split_time = get_smart_split_point(input_path, duration)
         print(f"Splitting at {split_time:.2f}s")
         
@@ -693,11 +710,11 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
 
             # PASS 1
             print("Parallel Pass 1/2: Analysis...")
-            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
                             "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
                             "-pass", "1", "-passlogfile", log_a, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
             
-            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
                             "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
                             "-pass", "1", "-passlogfile", log_b, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
 
@@ -721,11 +738,11 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             # PASS 2
             print("Parallel Pass 2/2: Encoding...")
             trk = ProgressTracker(durs[0], durs[1])
-            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
                             "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
                             "-pass", "2", "-passlogfile", log_a, "-c:a", "copy", str(p1_path)]
             
-            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", "hevc_nvenc", "-preset", "p5", 
+            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
                             "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
                             "-pass", "2", "-passlogfile", log_b, "-c:a", "copy", str(p2_path)]
 
@@ -764,7 +781,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             clean_log_file()
 
     # --- SPLIT SINGLE-PASS FOR OTHER HW ENCODERS ---
-    elif active_encoder in {"hevc_vaapi", "hevc_videotoolbox", "hevc_amf", "hevc_qsv"}:
+    elif active_encoder not in ["libx265", "libx264"]:
         split_time = get_smart_split_point(input_path, duration)
         print(f"Splitting at {split_time:.2f}s")
 

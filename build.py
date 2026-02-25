@@ -24,6 +24,7 @@ from pathlib import Path
 
 # --- Configuration ---
 PRESET_SIZES = [8, 50, 100, 500]
+PRESET_CODECS = ["hevc", "h264"]
 SOURCE_SCRIPT = "videocompress.py"
 FFMPEG_BINARIES = ["ffmpeg", "ffprobe"]
 OUTPUT_DIR = "dist"
@@ -171,7 +172,7 @@ def check_ffmpeg_available() -> bool:
     return True
 
 
-def create_preset_script(target_mb: int, temp_dir: str) -> str:
+def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
     """Create a temporary script with hardcoded target size."""
     with open(SOURCE_SCRIPT, "r", encoding="utf-8") as f:
         content = f.read()
@@ -183,30 +184,39 @@ def create_preset_script(target_mb: int, temp_dir: str) -> str:
         content
     )
     
-    # Update the usage message to reflect the preset
+    # Replace the default codec value
     content = re.sub(
-        r'print\("Usage: python script\.py <input> \[output\] \[size_mb\]"\)',
-        f'print("Usage: {target_mb}mb <input> [output] [size_mb]")',
+        r'CODEC_TYPE\s*=\s*"hevc"',
+        f'CODEC_TYPE = "{codec}"',
         content
     )
     
-    script_path = os.path.join(temp_dir, f"{target_mb}mb.py")
+    # Update the usage message to reflect the preset
+    content = re.sub(
+        r'print\("Usage: python script\.py <input> \[output\] \[size_mb\]"\)',
+        f'print("Usage: {target_mb}mb-{codec} <input> [output] [size_mb]")',
+        content
+    )
+    
+    script_path = os.path.join(temp_dir, f"{target_mb}mb_{codec}.py")
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(content)
     
     return script_path
 
 
-def build_executable(script_path: str, target_mb: int) -> bool:
+def build_executable(script_path: str, target_mb: int, codec: str) -> bool:
     """Build a single executable using PyInstaller."""
     platform_suffix = get_platform_suffix()
     
     version = os.environ.get("BUILD_VERSION")
     if version:
-        safe_version = re.sub(r'[\\/*?:"<>|]', '_', version)
-        output_name = f"{target_mb}mb-{safe_version}-{platform_suffix}"
+        # Sanitize version for filename (allow alphanumeric, dot, hyphen, underscore)
+        # Using standard versioning (e.g. v1.1.0) is safer than stripping dots (110) to avoid ambiguity.
+        safe_version = re.sub(r'[^\w\-\.]', '', version)
+        output_name = f"{target_mb}mb-{codec}-{platform_suffix}-{safe_version}"
     else:
-        output_name = f"{target_mb}mb-{platform_suffix}"
+        output_name = f"{target_mb}mb-{codec}-{platform_suffix}"
     
     log.info("Building %s...", output_name)
     
@@ -293,8 +303,9 @@ def main() -> int:
     
     with tempfile.TemporaryDirectory(prefix="vidcomp_build_") as temp_dir:
         for size in PRESET_SIZES:
-            script_path = create_preset_script(size, temp_dir)
-            results[size] = build_executable(script_path, size)
+            for codec in PRESET_CODECS:
+                script_path = create_preset_script(size, codec, temp_dir)
+                results[f"{size}mb-{codec}"] = build_executable(script_path, size, codec)
     
     # Clean build artifacts by default (unless --verbose)
     if not verbose:
@@ -308,7 +319,7 @@ def main() -> int:
     
     for size, success in results.items():
         status = "Success" if success else "Failed"
-        log.info("  %dMB: %s", size, status)
+        log.info("  %s: %s", size, status)
     
     failed = [s for s, ok in results.items() if not ok]
     if failed:
