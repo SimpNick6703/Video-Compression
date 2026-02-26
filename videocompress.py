@@ -548,9 +548,12 @@ def build_single_pass_cmd(
     elif "videotoolbox" in encoder:
         cmd.extend(["-allow_sw", "1", "-realtime", "0"])
     elif encoder == "libx265":
-        cmd.extend(["-preset", "medium", "-tag:v", "hvc1"])
+        cmd.extend(["-preset", "medium"])
     elif encoder == "libx264":
         cmd.extend(["-preset", "medium"])
+
+    if CODEC_TYPE == "hevc": cmd.extend(["-tag:v", "hvc1"])
+    elif CODEC_TYPE == "h264": cmd.extend(["-tag:v", "avc1"])
 
     cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k*2}k"])
     cmd.extend(["-c:a", "copy", "-loglevel", "error", "-stats", output_path])
@@ -740,12 +743,21 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             trk = ProgressTracker(durs[0], durs[1])
             cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
                             "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
-                            "-pass", "2", "-passlogfile", log_a, "-c:a", "copy", str(p1_path)]
+                            "-pass", "2", "-passlogfile", log_a]
             
             cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
                             "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
-                            "-pass", "2", "-passlogfile", log_b, "-c:a", "copy", str(p2_path)]
+                            "-pass", "2", "-passlogfile", log_b]
 
+            if CODEC_TYPE == "hevc":
+                cmd_a2.extend(["-tag:v", "hvc1"])
+                cmd_b2.extend(["-tag:v", "hvc1"])
+            elif CODEC_TYPE == "h264":
+                cmd_a2.extend(["-tag:v", "avc1"])
+                cmd_b2.extend(["-tag:v", "avc1"])
+
+            cmd_a2.extend(["-c:a", "copy", str(p1_path)])
+            cmd_b2.extend(["-c:a", "copy", str(p2_path)])
             pa = subprocess.Popen(cmd_a2, stderr=subprocess.PIPE, text=True, bufsize=0)
             pb = subprocess.Popen(cmd_b2, stderr=subprocess.PIPE, text=True, bufsize=0)
             
