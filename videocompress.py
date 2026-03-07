@@ -16,8 +16,29 @@ MB_TO_BYTES = 1024 * 1024
 MB_TO_BITS = 8 * 1024 * 1024
 BITRATE_SAFETY_FACTOR = 0.90
 MIN_BPP = 0.04  # Target Bits Per Pixel threshold
-LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"] 
-CODEC_TYPE = "hevc" # Options: "hevc", "h264"
+LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"]
+CODEC_TYPE = "hevc"  # Options: "hevc", "h264"
+
+ENCODER_PRIORITY = {
+    "hevc": {
+        "win32": ["hevc_nvenc", "hevc_amf", "hevc_qsv"],
+        "linux": ["hevc_nvenc", "hevc_vaapi"],
+        "darwin": ["hevc_videotoolbox"],
+        "fallback": "libx265"
+    },
+    "h264": {
+        "win32": ["h264_nvenc", "h264_amf", "h264_qsv"],
+        "linux": ["h264_nvenc", "h264_vaapi"],
+        "darwin": ["h264_videotoolbox"],
+        "fallback": "libx264"
+    }
+}
+
+# Create a generic chain for unknown OSes by combining all platform-specific encoders
+for codec, config in ENCODER_PRIORITY.items():
+    # Use dict.fromkeys to preserve order and remove duplicates
+    generic_chain = list(dict.fromkeys(config['win32'] + config['linux'] + config['darwin']))
+    config['other'] = generic_chain
 
 # --- Helpers ---
 
@@ -107,36 +128,33 @@ def check_encoder_available(encoder_name: str) -> bool:
 
 def select_best_encoder() -> str:
     """Detect the best available encoder based on OS and Hardware.
+    This function checks for hardware encoders in a preferred order based on
+    the operating system and configured codec type (H.264 or HEVC).
 
     Returns:
-        Encoder name (e.g., 'hevc_nvenc') or 'libx265' if none found.
+        The name of the best available FFmpeg encoder.
+
+    Raises:
+        ValueError: If the configured `CODEC_TYPE` is invalid.
     """
-    # 1. Determine priority chain based on OS to avoid useless checks
-    if CODEC_TYPE == "h264":
-        if sys.platform.startswith("linux"):
-            priority_chain = ["h264_nvenc", "h264_vaapi"]
-        elif sys.platform == "darwin":
-            priority_chain = ["h264_videotoolbox"]
-        elif sys.platform == "win32":
-            priority_chain = ["h264_nvenc", "h264_amf", "h264_qsv"]
-        else:
-            priority_chain = ["h264_nvenc", "h264_vaapi", "h264_videotoolbox", "h264_amf", "h264_qsv"]
-        fallback = "libx264"
+    codec_config = ENCODER_PRIORITY.get(CODEC_TYPE)
+    if not codec_config:
+        raise ValueError(f"Invalid CODEC_TYPE configured: {CODEC_TYPE}")
+
+    if sys.platform.startswith("linux"):
+        platform_key = "linux"
+    elif sys.platform == "darwin":
+        platform_key = "darwin"
+    elif sys.platform == "win32":
+        platform_key = "win32"
     else:
-        # HEVC
-        if sys.platform.startswith("linux"):
-            priority_chain = ["hevc_nvenc", "hevc_vaapi"]
-        elif sys.platform == "darwin":
-            priority_chain = ["hevc_videotoolbox"]
-        elif sys.platform == "win32":
-            priority_chain = ["hevc_nvenc", "hevc_amf", "hevc_qsv"]
-        else:
-            priority_chain = ["hevc_nvenc", "hevc_vaapi", "hevc_videotoolbox", "hevc_amf", "hevc_qsv"]
-        fallback = "libx265"
+        platform_key = "other"
+
+    priority_chain = codec_config[platform_key]
+    fallback = codec_config["fallback"]
 
     print(f"OS: {sys.platform}. Codec: {CODEC_TYPE}. Checking encoders: {', '.join(priority_chain)}...")
 
-    # 2. Check each candidate
     for enc in priority_chain:
         is_available = check_encoder_available(enc)
         print(f"  {enc}: {'Available' if is_available else 'Unavailable'}")

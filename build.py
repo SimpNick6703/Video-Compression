@@ -2,7 +2,7 @@
 """
 Build script for Video-Compression executables.
 
-Generates preset executables (8mb, 50mb, 100mb, 500mb) from videocompress.py
+Generates preset executables (10mb, 50mb, 100mb, 500mb) from videocompress.py
 by creating temporary copies with hardcoded target sizes, then compiling with PyInstaller.
 
 Usage:
@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 # --- Configuration ---
-PRESET_SIZES = [8, 50, 100, 500]
+PRESET_SIZES = [10, 50, 100, 500]
 PRESET_CODECS = ["hevc", "h264"]
 SOURCE_SCRIPT = "videocompress.py"
 FFMPEG_BINARIES = ["ffmpeg", "ffprobe"]
