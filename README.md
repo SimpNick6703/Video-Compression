@@ -5,6 +5,8 @@ Discord has too small file size limit for free. And, any online video compressor
 A normal user isn't curious about these configuration and just want a _targeted file size_ video compression with minimal quality loss.
 
 So, here's a simple drag and drop usage (In Windows) easy solution.
+> [!TIP]
+> Visit [this page](https://simpnick6703.github.io/Video-Compression) for Architectural overview and more.
 
 ## Requirements
 For running the script locally (your own build):
@@ -23,7 +25,9 @@ For using prebuilt binaries from releases, you just need to download the executa
   - Download any of the target filesize build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
   - Drag and drop your video on the executable. (Or run in Command Prompt/Terminal as `./{size}mb-win64 <input.mp4> [output.mp4]`)
 
-https://github.com/user-attachments/assets/0272427b-0db4-40dd-bd14-37d705d110a0
+
+https://github.com/user-attachments/assets/2f9c79d7-ce15-41a5-8895-a89b549afa3e
+
 
 - In Linux:
   - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
@@ -45,7 +49,7 @@ python build.py
 
 This will:
 1. Automatically download FFmpeg/FFprobe for your platform (if not already present)
-2. Generate all preset executables (8mb, 50mb, 100mb, 500mb) in `dist/`
+2. Generate all preset executables (10mb, 50mb, 100mb, 500mb) in `dist/`
 3. Clean up build artifacts and downloaded binaries
 
 To keep build artifacts for debugging:

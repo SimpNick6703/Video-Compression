@@ -31,6 +31,8 @@ jobs:
         run: pip install pyinstaller
 
       - name: Build Executables
+        env:
+          BUILD_VERSION: ${{ github.ref_name }}
         run: python build.py
 
       # --- Upload Section ---
