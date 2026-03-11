@@ -74,5 +74,5 @@ Considering the wide variety of hardware configurations, the script uses a fallb
 > `*_nvenc` > `*_vaapi` > `*_videotoolbox` > `*_amf` > `*_qsv` > `libx265` / `libx264` (CPU)
 
 > [!NOTE]
-> Only NVENC supports Two-Pass encoding among the listed encoders. Other encoders use Single-Pass encoding only.
+> NVENC and AMF (Windows only) support Two-Pass encoding among the listed encoders. Other encoders use Single-Pass encoding only. This is due to hardware driver support for specific encoder commands, not a limitation of this script's code.
 > If your dedicated GPU is being bypassed in favor of integrated GPU or CPU encoding, you'll need to manually change the priority logic in the script to suit your hardware setup. Or, you may simply remove unwanted encoders from the priority list in the script, build the executable again, and use that custom build.

@@ -695,8 +695,8 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     active_encoder = select_best_encoder()
     print(f"Active Encoder: {active_encoder}")
 
-    # --- NVENC SPECIFIC: PARALLEL 2-PASS ---
-    if "nvenc" in active_encoder:
+    # --- NVENC / AMF (Windows) PARALLEL 2-PASS ---
+    if "nvenc" in active_encoder or ("amf" in active_encoder and sys.platform == "win32"):
         split_time = get_smart_split_point(input_path, duration)
         print(f"Splitting at {split_time:.2f}s")
         
@@ -725,17 +725,23 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             if opt_fps < fps: filters.append(f"fps={opt_fps}")
             if opt_h < src_h: filters.append(f"scale=-2:{opt_h}")
             
-            base = [ffmpeg_exe, "-hwaccel", "cuda", "-y", "-hide_banner", "-loglevel", "error", "-stats"]
+            if "nvenc" in active_encoder:
+                hw_accel = ["-hwaccel", "cuda"]
+                enc_params = ["-preset", "p5"]
+            else:
+                hw_accel = ["-hwaccel", "auto"]
+                enc_params = ["-usage", "transcoding", "-quality", "quality"]
 
+            base = [ffmpeg_exe] + hw_accel + ["-y", "-hide_banner", "-loglevel", "error", "-stats"]
             vf_args = ["-vf", ",".join(filters)] if filters else []
 
             # PASS 1
             print("Parallel Pass 1/2: Analysis...")
-            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
+            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [ 
                             "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
                             "-pass", "1", "-passlogfile", log_a, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
             
-            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
+            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [ 
                             "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
                             "-pass", "1", "-passlogfile", log_b, "-f", "null", "NUL" if os.name=='nt' else "/dev/null"]
 
@@ -759,11 +765,11 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
             # PASS 2
             print("Parallel Pass 2/2: Encoding...")
             trk = ProgressTracker(durs[0], durs[1])
-            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
+            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [ 
                             "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
                             "-pass", "2", "-passlogfile", log_a]
             
-            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path, "-c:v", active_encoder, "-preset", "p5", 
+            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [ 
                             "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
                             "-pass", "2", "-passlogfile", log_b]
 
