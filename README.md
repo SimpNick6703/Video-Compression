@@ -45,7 +45,7 @@ https://github.com/user-attachments/assets/2f9c79d7-ce15-41a5-8895-a89b549afa3e
 To build the preset executables yourself:
 
 ### Prerequisites
-- Python 3.x
+- Python 3.11+
 - PyInstaller (`pip install pyinstaller`)
 
 ### Building
