@@ -111,13 +111,13 @@ def clean_log_file(prefixes: Optional[List[str]] = None) -> None:
         try:
             if os.path.exists(log_file): os.remove(log_file)
         except OSError: pass
-    if prefixes:
-        for p in prefixes:
-            for ext in ["-0.log", "-0.log.mbtree"]:
-                try:
-                    log_path = p + ext
-                    if os.path.exists(log_path): os.remove(log_path)
-                except OSError: pass
+    prefixes_list: List[str] = prefixes if prefixes else [] # type: ignore
+    for p in prefixes_list:
+        for ext in ["-0.log", "-0.log.mbtree"]:
+            try:
+                log_path = f"{p}{ext}"
+                if os.path.exists(log_path): os.remove(log_path)
+            except OSError: pass
 
 def check_encoder_available(encoder_name: str) -> bool:
     """Check if a specific FFmpeg encoder can be used.
@@ -187,7 +187,9 @@ def select_best_encoder(codec_type: str = "hevc") -> str:
             return enc
     
     print(f"  No hardware encoder found. Fallback to CPU ({fallback}).")
-    return fallback
+    if isinstance(fallback, list):
+        return str(fallback[0])
+    return str(fallback)
 
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
     """Probe video metadata.
@@ -394,14 +396,17 @@ class ProgressTracker:
             Tuple of (progress_percent, total_fps, eta_seconds).
         """
         with self.lock:
-            t_a = min(self.time_a, self.dur_a)
-            t_b = min(self.time_b, self.dur_b)
-            prog = min(100, ((t_a + t_b) / self.total_dur) * 100)
+            t_a = self.time_a if self.time_a < self.dur_a else self.dur_a
+            t_b = self.time_b if self.time_b < self.dur_b else self.dur_b
+            prog_val = ((t_a + t_b) / self.total_dur) * 100.0
+            prog = prog_val if prog_val < 100.0 else 100.0
             fps = self.fps_a + self.fps_b
-            rem_a = max(0, self.dur_a - self.time_a)
-            rem_b = max(0, self.dur_b - self.time_b)
-            eta = max(rem_a / self.spd_a, rem_b / self.spd_b)
-            return prog, fps, int(eta)
+            rem_a = (self.dur_a - self.time_a) if self.dur_a > self.time_a else 0.0
+            rem_b = (self.dur_b - self.time_b) if self.dur_b > self.time_b else 0.0
+            eta_a = rem_a / self.spd_a if self.spd_a > 0 else 0.0
+            eta_b = rem_b / self.spd_b if self.spd_b > 0 else 0.0
+            eta = eta_a if eta_a > eta_b else eta_b
+            return float(prog), float(fps), int(eta)
 
 def monitor_process(process: subprocess.Popen[str], tracker: ProgressTracker, is_a: bool) -> None:
     """Monitor an FFmpeg process and update progress.
@@ -488,7 +493,7 @@ def encode_single_pass_hw(
     process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='ignore', bufsize=0)
     
     # Simple single-process monitor
-    pat = re.compile(r'frame=\s*(\d+).*?fps=\s*(\d+\.?\d*).*?time=(\d+:\d+:\d+\.\d+).*?speed=\s*(\d+\.?\d*)x')
+    pat_str = r'frame=\s*(\d+).*?fps=\s*(\d+\.?\d*).*?time=(\d+:\d+:\d+\.\d+).*?speed=\s*(\d+\.?\d*)x'
     buf = ""
     last_speed = 0.001
     
@@ -497,7 +502,7 @@ def encode_single_pass_hw(
             char = process.stderr.read(1) # type: ignore
             if not char: break
             if char == '\r' or char == '\n':
-                match = pat.search(buf)
+                match = re.search(pat_str, buf)
                 if match:
                     cur_fps = float(match.group(2)) if match.group(2) else 0
                     h, m, s = map(float, match.group(3).split(':'))
@@ -899,24 +904,28 @@ def main() -> None:
     target_mb: int = 100
     codec_type: str = "hevc"
 
-    args: List[str] = sys.argv[1:]
+    args: List[str] = list(sys.argv)
+    if len(args) > 0:
+        args.pop(0)
     for arg in args:
         arg_lower = str(arg).lower()
         if arg_lower in ["hevc", "h264"]:
             codec_type = arg_lower
         elif str(arg).isdigit():
             target_mb = int(arg)
-        elif not input_file and os.path.exists(str(arg)):
+        elif input_file is None and os.path.exists(str(arg)):
             input_file = str(arg)
-        elif input_file and arg != input_file:
+        elif input_file is not None and arg != input_file:
             output_file = str(arg)
 
-    if not input_file:
+    if input_file is None:
         print("Error: Valid input video file not provided or found.")
         sys.exit(1)
+        return
 
-
-    success, result = compress_video(input_file, output_file, target_size_mb=target_mb, codec_type=codec_type)
+    inp = str(input_file)
+    out_valid = str(output_file) if output_file is not None else None
+    success, result = compress_video(inp, out_valid, target_size_mb=target_mb, codec_type=codec_type)
     if not success:
         sys.stderr.write(f"Compression failed: {result}\n")
         sys.exit(1)

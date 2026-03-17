@@ -21,6 +21,7 @@ import zipfile
 import logging
 import urllib.request
 from pathlib import Path
+import concurrent.futures
 
 # --- Configuration ---
 PRESET_SIZES = [10, 50, 100, 500]
@@ -74,7 +75,13 @@ def get_platform_suffix() -> str:
 
 def download_file(url: str, dest: str):
     """Download a file from URL to destination."""
-    log.info("  Downloading from %s", (url[:60] + "...") if len(url) > 60 else url)
+    chars = []
+    for i, c in enumerate(url):
+        if i >= 60: break
+        chars.append(c)
+    short_url = "".join(chars)
+    if len(url) > 60: short_url += "..."
+    log.info("  Downloading from %s", short_url)
     urllib.request.urlretrieve(url, dest)
 
 
@@ -117,10 +124,13 @@ def download_ffmpeg() -> bool:
                     basename = os.path.basename(member.name)
                     if basename in ["ffmpeg", "ffprobe"]:
                         # Extract file content to current directory
-                        with tf.extractfile(member) as src, open(basename, 'wb') as dst:
-                            dst.write(src.read())
-                        os.chmod(basename, 0o755)
-                        log.info("  Extracted %s", basename)
+                        src = tf.extractfile(member)
+                        if src is not None:
+                            with open(basename, 'wb') as dst:
+                                dst.write(src.read())
+                            src.close()
+                            os.chmod(basename, 0o755)
+                            log.info("  Extracted %s", basename)
             
             os.remove(archive_path)
             
@@ -286,10 +296,17 @@ def main() -> int:
     
     try:
         with tempfile.TemporaryDirectory(prefix="vidcomp_build_") as temp_dir:
-            for size in PRESET_SIZES:
-                for codec in PRESET_CODECS:
-                    script_path = create_preset_script(size, codec, temp_dir)
-                    results[f"{size}mb-{codec}"] = build_executable(script_path, size, codec)
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures = {}
+                for size in PRESET_SIZES:
+                    for codec in PRESET_CODECS:
+                        script_path = create_preset_script(size, codec, temp_dir)
+                        future = executor.submit(build_executable, script_path, size, codec) # type: ignore
+                        futures[future] = f"{size}mb-{codec}"
+                
+                for future in concurrent.futures.as_completed(futures):
+                    name = futures[future]
+                    results[name] = future.result()
     except Exception as e:
         log.error("Failed allocating preset staging area: %s", e)
         return 1
