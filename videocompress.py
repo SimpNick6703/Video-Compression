@@ -896,7 +896,7 @@ def compress_video(input_path: str, output_path: Optional[str] = None, target_si
     
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: python videocompress.py <input.mp4> [output.mp4] [size_in_mb] [hevc/h264]")
+        print("Usage: <input.mp4> [output.mp4] [size_in_mb] [hevc/h264]")
         sys.exit(1)
 
     input_file: Optional[str] = None
@@ -904,28 +904,52 @@ def main() -> None:
     target_mb: int = 100
     codec_type: str = "hevc"
 
-    args: List[str] = list(sys.argv)
-    if len(args) > 0:
-        args.pop(0)
-    for arg in args:
-        arg_lower = str(arg).lower()
+    # Strategy: 
+    # 1. Extract flags and numbers first.
+    # 2. Assign the rest as paths: first path that exists is input.
+    # 3. First path that isn't the input is output.
+
+    raw_args = sys.argv # Pyre workaround: avoid slicing sys.argv directly
+    potential_paths: List[str] = []
+
+    for i in range(1, len(raw_args)):
+        arg_s = str(raw_args[i])
+        arg_lower = arg_s.lower()
+        
         if arg_lower in ["hevc", "h264"]:
             codec_type = arg_lower
-        elif str(arg).isdigit():
-            target_mb = int(arg)
-        elif input_file is None and os.path.exists(str(arg)):
-            input_file = str(arg)
-        elif input_file is not None and arg != input_file:
-            output_file = str(arg)
+        elif arg_s.isdigit():
+            target_mb = int(arg_s)
+        else:
+            potential_paths.append(arg_s)
+
+    # First pass: Identify input file (must exist)
+    for path in potential_paths:
+        if os.path.exists(path):
+            input_file = path
+            break
+            
+    # Second pass: Identify output file (first non-input path)
+    for path in potential_paths:
+        if path != input_file:
+            output_file = path
+            break
 
     if input_file is None:
+        # Fallback for when the input file path might not have been recognized as such
+        # strictly (e.g. if it doesn't exist yet, although it should for input).
         print("Error: Valid input video file not provided or found.")
         sys.exit(1)
-        return
 
-    inp = str(input_file)
-    out_valid = str(output_file) if output_file is not None else None
-    success, result = compress_video(inp, out_valid, target_size_mb=target_mb, codec_type=codec_type)
+    # Final validation for Pyre: input_file is not None
+    inp_path = str(input_file)
+
+    success, result = compress_video(
+        inp_path, 
+        output_file, 
+        target_size_mb=target_mb, 
+        codec_type=codec_type
+    )
     if not success:
         sys.stderr.write(f"Compression failed: {result}\n")
         sys.exit(1)

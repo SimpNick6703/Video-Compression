@@ -188,7 +188,7 @@ def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
 import videocompress
 
 # Preset Wrapper: {target_mb}mb-{codec}
-sys.argv.extend(["{codec}", "{target_mb}"])
+sys.argv[1:1] = ["{codec}", "{target_mb}"]
 videocompress.main()
 '''
     script_path = os.path.join(temp_dir, f"{target_mb}mb_{codec}.py")
