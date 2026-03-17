@@ -1,0 +1,165 @@
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        :root {
+            /* Default Dark Mode Variables */
+            --bg-color: #0f172a;
+            --text-main: #f8fafc;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --scroll-track: #1e293b;
+            --scroll-thumb: #475569;
+        }
+
+        /* --- LIGHT MODE CONFIGURATION --- */
+        body.light-mode {
+            /* Solarized Yellow to Light Cyan Gradient */
+            background: linear-gradient(135deg, #FDF6E3 0%, #BEF0FF 100%) !important;
+            --bg-color: #FDF6E3;
+            --text-main: #334155;
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(148, 163, 184, 0.4);
+            --scroll-track: #f1f5f9;
+            --scroll-thumb: #cbd5e1;
+        }
+
+        /* TAILWIND UTILITY OVERRIDES FOR LIGHT MODE */
+        /* Forces standard Slate elements to adapt to the light theme */
+        body.light-mode .text-white { color: #1e293b !important; }
+        body.light-mode .text-slate-300 { color: #334155 !important; }
+        body.light-mode .text-slate-400 { color: #64748b !important; }
+        body.light-mode .text-slate-500 { color: #94a3b8 !important; }
+        
+        body.light-mode .bg-slate-900 { background-color: #ffffff !important; border-color: #e2e8f0 !important; }
+        body.light-mode .bg-slate-900\/40 { background-color: rgba(255,255,255,0.4) !important; }
+        body.light-mode .bg-slate-900\/50 { background-color: #f8fafc !important; border-color: #e2e8f0 !important; }
+        body.light-mode .bg-slate-900\/80 { background-color: #ffffff !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        
+        body.light-mode .bg-slate-800 { background-color: #f1f5f9 !important; border-color: #cbd5e1 !important; }
+        body.light-mode .bg-slate-800\/50 { background-color: #f1f5f9 !important; }
+        
+        body.light-mode .border-slate-700 { border-color: #cbd5e1 !important; }
+        body.light-mode .border-slate-700\/50 { border-color: #cbd5e1 !important; }
+        body.light-mode .border-slate-600 { border-color: #94a3b8 !important; }
+
+        /* Neon Text Taming */
+        body.light-mode .neon-text { text-shadow: none; color: #0891b2 !important; } 
+        body.light-mode .neon-text-violet { text-shadow: none; color: #7c3aed !important; }
+
+        /* Interactive Elements - Light Mode */
+        body.light-mode .nav-btn:hover { background-color: rgba(6, 182, 212, 0.1); border-radius: 4px; }
+        body.light-mode .os-btn-active { background: #e0f2fe; color: #0284c7; border-color: #0284c7; }
+        
+        body.light-mode .tab-active {
+            color: #0891b2;
+            border-bottom: 2px solid #0891b2;
+            text-shadow: none;
+        }
+
+        /* --- THEME BUTTON STYLES (CSS Controlled) --- */
+        #theme-toggle {
+            /* Default Dark Mode State */
+            background-color: #1e293b;
+            color: #94a3b8;
+            border-color: #334155;
+            transition: all 0.3s ease;
+        }
+        
+        body.light-mode #theme-toggle {
+            /* Light Mode State (Cream/Amber) */
+            background-color: #fffbeb; /* Amber-50 */
+            color: #d97706; /* Amber-600 */
+            border-color: #fcd34d; /* Amber-300 */
+            box-shadow: 0 2px 5px rgba(245, 158, 11, 0.2);
+        }
+
+        /* --- GENERAL STYLES --- */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container { height: 400px; }
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--scroll-track); }
+        ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            transition: background 0.3s, border-color 0.3s;
+        }
+
+        .neon-text { text-shadow: 0 0 10px rgba(6, 182, 212, 0.5); }
+        .neon-text-violet { text-shadow: 0 0 10px rgba(139, 92, 246, 0.5); }
+
+        .step-connector { position: relative; }
+        .step-connector::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 2rem;
+            background-color: #475569;
+            z-index: 0;
+        }
+        .step-connector:last-child::after { display: none; }
+        @media (min-width: 768px) {
+            .step-connector::after {
+                top: 50%;
+                left: 100%;
+                transform: translateY(-50%);
+                width: 2rem;
+                height: 2px;
+            }
+        }
+
+        .tab-active {
+            border-bottom: 2px solid #22d3ee;
+            color: #22d3ee;
+            text-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+        }
+        
+        .os-btn-active {
+            background: rgba(34, 211, 238, 0.1);
+            border-color: #22d3ee;
+            color: #22d3ee;
+            box-shadow: inset 0 0 10px rgba(34, 211, 238, 0.2);
+        }
+
+        .hidden-section { display: none; }
+        
+        .bg-pattern {
+            background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        body.light-mode .bg-pattern {
+            background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+        }
+        
+        .animate-glow { animation: glow 2s ease-in-out infinite alternate; }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 5px rgba(6, 182, 212, 0.2); }
+            to { box-shadow: 0 0 15px rgba(6, 182, 212, 0.4); }
+        }

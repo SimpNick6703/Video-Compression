@@ -74,7 +74,7 @@ def get_platform_suffix() -> str:
 
 def download_file(url: str, dest: str):
     """Download a file from URL to destination."""
-    log.info("  Downloading from %s", url[:60] + "..." if len(url) > 60 else url)
+    log.info("  Downloading from %s", (url[:60] + "...") if len(url) > 60 else url)
     urllib.request.urlretrieve(url, dest)
 
 
@@ -173,31 +173,14 @@ def check_ffmpeg_available() -> bool:
 
 
 def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
-    """Create a temporary script with hardcoded target size."""
-    with open(SOURCE_SCRIPT, "r", encoding="utf-8") as f:
-        content = f.read()
-    
-    # Replace the default target_mb value in the main block
-    content = re.sub(
-        r'(target_mb\s*=\s*)\d+',
-        f'\\g<1>{target_mb}',
-        content
-    )
-    
-    # Replace the default codec value
-    content = re.sub(
-        r'CODEC_TYPE\s*=\s*"hevc"',
-        f'CODEC_TYPE = "{codec}"',
-        content
-    )
-    
-    # Update the usage message to reflect the preset
-    content = re.sub(
-        r'print\("Usage: python script\.py <input> \[output\] \[size_mb\]"\)',
-        f'print("Usage: {target_mb}mb-{codec} <input> [output] [size_mb]")',
-        content
-    )
-    
+    """Create a temporary script wrapper with hardcoded preset parameters."""
+    content = f'''import sys
+import videocompress
+
+# Preset Wrapper: {target_mb}mb-{codec}
+sys.argv.extend(["{codec}", "{target_mb}"])
+videocompress.main()
+'''
     script_path = os.path.join(temp_dir, f"{target_mb}mb_{codec}.py")
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -246,7 +229,7 @@ def build_executable(script_path: str, target_mb: int, codec: str) -> bool:
         subprocess.run(cmd, check=True)
         log.info("  Successfully built: %s", output_name)
         return True
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         log.error("  Failed to build %s: %s", output_name, e)
         return False
 
@@ -299,14 +282,18 @@ def main() -> int:
     
     # Build each preset
     log.info("Building presets: %s", PRESET_SIZES)
-    results = {}
+    results: dict[str, bool] = {}
     
-    with tempfile.TemporaryDirectory(prefix="vidcomp_build_") as temp_dir:
-        for size in PRESET_SIZES:
-            for codec in PRESET_CODECS:
-                script_path = create_preset_script(size, codec, temp_dir)
-                results[f"{size}mb-{codec}"] = build_executable(script_path, size, codec)
-    
+    try:
+        with tempfile.TemporaryDirectory(prefix="vidcomp_build_") as temp_dir:
+            for size in PRESET_SIZES:
+                for codec in PRESET_CODECS:
+                    script_path = create_preset_script(size, codec, temp_dir)
+                    results[f"{size}mb-{codec}"] = build_executable(script_path, size, codec)
+    except Exception as e:
+        log.error("Failed allocating preset staging area: %s", e)
+        return 1
+
     # Clean build artifacts by default (unless --verbose)
     if not verbose:
         log.info("Cleaning build artifacts...")
