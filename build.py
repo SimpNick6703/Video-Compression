@@ -198,8 +198,8 @@ videocompress.main()
     return script_path
 
 
-def build_executable(script_path: str, target_mb: int, codec: str) -> bool:
-    """Build a single executable using PyInstaller."""
+def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str, config_dir: str) -> bool:
+    """Build a single executable using PyInstaller with isolation."""
     platform_suffix = get_platform_suffix()
     
     version = os.environ.get("BUILD_VERSION")
@@ -230,13 +230,18 @@ def build_executable(script_path: str, target_mb: int, codec: str) -> bool:
         "--onefile",
         "--console",
         f"--name={output_name}",
+        f"--workpath={work_dir}",
         f"--distpath={OUTPUT_DIR}",
         "--clean",
         "--noconfirm",
     ] + add_binary_args + [script_path]
     
+    # Isolate PyInstaller's global metadata/bincache to avoid race conditions
+    env = os.environ.copy()
+    env["PYINSTALLER_CONFIG_DIR"] = config_dir
+    
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
         log.info("  Successfully built: %s", output_name)
         return True
     except Exception as e:
@@ -300,8 +305,15 @@ def main() -> int:
                 futures = {}
                 for size in PRESET_SIZES:
                     for codec in PRESET_CODECS:
-                        script_path = create_preset_script(size, codec, temp_dir)
-                        future = executor.submit(build_executable, script_path, size, codec) # type: ignore
+                        task_name = f"{size}mb_{codec}"
+                        task_dir = os.path.join(temp_dir, task_name)
+                        task_work = os.path.join(task_dir, "work")
+                        task_config = os.path.join(task_dir, "config")
+                        os.makedirs(task_work, exist_ok=True)
+                        os.makedirs(task_config, exist_ok=True)
+                        
+                        script_path = create_preset_script(size, codec, task_dir)
+                        future = executor.submit(build_executable, script_path, size, codec, task_work, task_config) # type: ignore
                         futures[future] = f"{size}mb-{codec}"
                 
                 for future in concurrent.futures.as_completed(futures):
