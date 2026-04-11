@@ -21,6 +21,7 @@ import zipfile
 import logging
 import urllib.request
 from pathlib import Path
+import concurrent.futures
 
 # --- Configuration ---
 PRESET_SIZES = [10, 50, 100, 500]
@@ -74,7 +75,8 @@ def get_platform_suffix() -> str:
 
 def download_file(url: str, dest: str):
     """Download a file from URL to destination."""
-    log.info("  Downloading from %s", url[:60] + "..." if len(url) > 60 else url)
+    short_url = (url[:60] + "...") if len(url) > 60 else url
+    log.info("  Downloading from %s", short_url)
     urllib.request.urlretrieve(url, dest)
 
 
@@ -117,10 +119,13 @@ def download_ffmpeg() -> bool:
                     basename = os.path.basename(member.name)
                     if basename in ["ffmpeg", "ffprobe"]:
                         # Extract file content to current directory
-                        with tf.extractfile(member) as src, open(basename, 'wb') as dst:
-                            dst.write(src.read())
-                        os.chmod(basename, 0o755)
-                        log.info("  Extracted %s", basename)
+                        src = tf.extractfile(member)
+                        if src is not None:
+                            with open(basename, 'wb') as dst:
+                                dst.write(src.read())
+                            src.close()
+                            os.chmod(basename, 0o755)
+                            log.info("  Extracted %s", basename)
             
             os.remove(archive_path)
             
@@ -173,31 +178,14 @@ def check_ffmpeg_available() -> bool:
 
 
 def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
-    """Create a temporary script with hardcoded target size."""
-    with open(SOURCE_SCRIPT, "r", encoding="utf-8") as f:
-        content = f.read()
-    
-    # Replace the default target_mb value in the main block
-    content = re.sub(
-        r'(target_mb\s*=\s*)\d+',
-        f'\\g<1>{target_mb}',
-        content
-    )
-    
-    # Replace the default codec value
-    content = re.sub(
-        r'CODEC_TYPE\s*=\s*"hevc"',
-        f'CODEC_TYPE = "{codec}"',
-        content
-    )
-    
-    # Update the usage message to reflect the preset
-    content = re.sub(
-        r'print\("Usage: python script\.py <input> \[output\] \[size_mb\]"\)',
-        f'print("Usage: {target_mb}mb-{codec} <input> [output] [size_mb]")',
-        content
-    )
-    
+    """Create a temporary script wrapper with hardcoded preset parameters."""
+    content = f'''import sys
+import videocompress
+
+# Preset Wrapper: {target_mb}mb-{codec}
+sys.argv[1:1] = ["{codec}", "{target_mb}"]
+videocompress.main()
+'''
     script_path = os.path.join(temp_dir, f"{target_mb}mb_{codec}.py")
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -205,8 +193,8 @@ def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
     return script_path
 
 
-def build_executable(script_path: str, target_mb: int, codec: str) -> bool:
-    """Build a single executable using PyInstaller."""
+def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str, config_dir: str) -> bool:
+    """Build a single executable using PyInstaller with isolation."""
     platform_suffix = get_platform_suffix()
     
     version = os.environ.get("BUILD_VERSION")
@@ -237,16 +225,21 @@ def build_executable(script_path: str, target_mb: int, codec: str) -> bool:
         "--onefile",
         "--console",
         f"--name={output_name}",
+        f"--workpath={work_dir}",
         f"--distpath={OUTPUT_DIR}",
         "--clean",
         "--noconfirm",
     ] + add_binary_args + [script_path]
     
+    # Isolate PyInstaller's global metadata/bincache to avoid race conditions
+    env = os.environ.copy()
+    env["PYINSTALLER_CONFIG_DIR"] = config_dir
+    
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
         log.info("  Successfully built: %s", output_name)
         return True
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         log.error("  Failed to build %s: %s", output_name, e)
         return False
 
@@ -299,14 +292,32 @@ def main() -> int:
     
     # Build each preset
     log.info("Building presets: %s", PRESET_SIZES)
-    results = {}
+    results: dict[str, bool] = {}
     
-    with tempfile.TemporaryDirectory(prefix="vidcomp_build_") as temp_dir:
-        for size in PRESET_SIZES:
-            for codec in PRESET_CODECS:
-                script_path = create_preset_script(size, codec, temp_dir)
-                results[f"{size}mb-{codec}"] = build_executable(script_path, size, codec)
-    
+    try:
+        with tempfile.TemporaryDirectory(prefix="vidcomp_build_") as temp_dir:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures = {}
+                for size in PRESET_SIZES:
+                    for codec in PRESET_CODECS:
+                        task_name = f"{size}mb_{codec}"
+                        task_dir = os.path.join(temp_dir, task_name)
+                        task_work = os.path.join(task_dir, "work")
+                        task_config = os.path.join(task_dir, "config")
+                        os.makedirs(task_work, exist_ok=True)
+                        os.makedirs(task_config, exist_ok=True)
+                        
+                        script_path = create_preset_script(size, codec, task_dir)
+                        future = executor.submit(build_executable, script_path, size, codec, task_work, task_config) # type: ignore
+                        futures[future] = f"{size}mb-{codec}"
+                
+                for future in concurrent.futures.as_completed(futures):
+                    name = futures[future]
+                    results[name] = future.result()
+    except Exception as e:
+        log.error("Failed allocating preset staging area: %s", e)
+        return 1
+
     # Clean build artifacts by default (unless --verbose)
     if not verbose:
         log.info("Cleaning build artifacts...")
