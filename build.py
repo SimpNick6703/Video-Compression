@@ -75,12 +75,7 @@ def get_platform_suffix() -> str:
 
 def download_file(url: str, dest: str):
     """Download a file from URL to destination."""
-    chars = []
-    for i, c in enumerate(url):
-        if i >= 60: break
-        chars.append(c)
-    short_url = "".join(chars)
-    if len(url) > 60: short_url += "..."
+    short_url = (url[:60] + "...") if len(url) > 60 else url
     log.info("  Downloading from %s", short_url)
     urllib.request.urlretrieve(url, dest)
 
