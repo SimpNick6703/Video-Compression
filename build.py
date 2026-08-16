@@ -37,7 +37,7 @@ FFMPEG_URLS = {
         "type": "zip"
     },
     "linux": {
-        "url": "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
         "type": "tar.xz"
     },
     "darwin": {
