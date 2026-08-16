@@ -73,11 +73,40 @@ def get_platform_suffix() -> str:
     return "linux"
 
 
-def download_file(url: str, dest: str):
-    """Download a file from URL to destination."""
+def download_file(url: str, dest: str) -> None:
+    """Download a file from URL to destination with curl or urllib with retries."""
+    import time
     short_url = (url[:60] + "...") if len(url) > 60 else url
     log.info("  Downloading from %s", short_url)
-    urllib.request.urlretrieve(url, dest)
+    
+    # Use curl if available (handles John Van Sickle / Cloudflare smoothly)
+    if shutil.which("curl"):
+        cmd = [
+            "curl", "-fsSL", "--retry", "5", "--retry-delay", "3",
+            "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "-o", dest, url
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(dest) and os.path.getsize(dest) > 0:
+            return
+        log.warning("  curl download failed: %s, falling back to urllib...", res.stderr.strip())
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+    }
+    req = urllib.request.Request(url, headers=headers)
+    
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response, open(dest, 'wb') as out_file:
+                shutil.copyfileobj(response, out_file)
+            return
+        except Exception as e:
+            if attempt == 3:
+                raise
+            log.warning("  Download attempt %d failed (%s), retrying...", attempt, e)
+            time.sleep(2)
 
 
 def download_ffmpeg() -> bool:
