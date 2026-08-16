@@ -25,7 +25,10 @@ For using prebuilt binaries from releases, you just need to download the executa
   - Download any of the target filesize build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
   - Drag and drop your video on the executable. (Or run in Command Prompt/Terminal as `./{size}mb-{codec}-win64.exe <input.mp4> [output.mp4]`)
 
-https://github.com/user-attachments/assets/2f9c79d7-ce15-41a5-8895-a89b549afa3e
+
+
+https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669
+
 
 
 - In Linux:
