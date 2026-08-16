@@ -55,7 +55,7 @@ python build.py
 
 This will:
 1. Automatically download FFmpeg/FFprobe for your platform (if not already present)
-2. Generate all preset executables (10mb, 50mb, 100mb, 500mb for both HEVC and H.264 codecs) in `dist/`
+2. Generate all preset executables (20mb, 50mb, 100mb, 500mb for both HEVC and H.264 codecs) in `dist/`
 3. Clean up build artifacts and downloaded binaries
 
 To keep build artifacts for debugging:
