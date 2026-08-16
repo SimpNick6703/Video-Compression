@@ -1,0 +1,10 @@
+dist/
+build/
+*.spec
+ffmpeg.exe
+ffprobe.exe
+ffmpeg
+ffprobe
+__pycache__/
+*.pyc
+*.pyo

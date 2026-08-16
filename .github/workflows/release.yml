@@ -27,8 +27,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      - name: Install Dependencies
+        run: pip install rich pyinstaller
 
       - name: Build Executables
         env:

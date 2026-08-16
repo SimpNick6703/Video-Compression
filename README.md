@@ -46,7 +46,7 @@ To build the preset executables yourself:
 
 ### Prerequisites
 - Python 3.11+
-- PyInstaller (`pip install pyinstaller`)
+- Dependencies: `pip install -e .` (or `pip install rich pyinstaller`)
 
 ### Building
 ```bash

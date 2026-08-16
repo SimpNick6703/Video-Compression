@@ -1,0 +1,9 @@
+[project]
+name = "video-compression"
+description = "Discord-compliant video compression with hardware-accelerated encoding"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["rich>=13.0"]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]

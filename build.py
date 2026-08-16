@@ -26,7 +26,7 @@ import concurrent.futures
 # --- Configuration ---
 PRESET_SIZES = [20, 50, 100, 500]
 PRESET_CODECS = ["hevc", "h264"]
-SOURCE_SCRIPT = "videocompress.py"
+SOURCE_PACKAGE = "videocompress"
 FFMPEG_BINARIES = ["ffmpeg", "ffprobe"]
 OUTPUT_DIR = "dist"
 
@@ -184,7 +184,10 @@ import videocompress
 
 # Preset Wrapper: {target_mb}mb-{codec}
 sys.argv[1:1] = ["{codec}", "{target_mb}"]
-videocompress.main()
+try:
+    videocompress.main()
+except KeyboardInterrupt:
+    sys.exit(130)
 '''
     script_path = os.path.join(temp_dir, f"{target_mb}mb_{codec}.py")
     with open(script_path, "w", encoding="utf-8") as f:
@@ -220,10 +223,12 @@ def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str
         except FileNotFoundError as e:
             log.warning("  %s", e)
     
+    repo_root = str(Path(".").resolve())
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--console",
+        f"--paths={repo_root}",
         f"--name={output_name}",
         f"--workpath={work_dir}",
         f"--distpath={OUTPUT_DIR}",
@@ -271,9 +276,9 @@ def clean_build_artifacts(include_ffmpeg: bool = True):
 def main() -> int:
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
     
-    # Validate source script exists
-    if not os.path.exists(SOURCE_SCRIPT):
-        log.error("Source script '%s' not found", SOURCE_SCRIPT)
+    # Validate source package exists
+    if not os.path.isdir(SOURCE_PACKAGE):
+        log.error("Source package directory '%s' not found", SOURCE_PACKAGE)
         return 1
     
     # Check if FFmpeg is available, download if not
