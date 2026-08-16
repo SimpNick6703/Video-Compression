@@ -187,10 +187,9 @@ def check_encoder_available(encoder_name: str) -> bool:
     """
     ffmpeg_exe = get_resource_path("ffmpeg")
     try:
-        # VAAPI often requires hwupload for software sources
         is_vaapi = "vaapi" in encoder_name
         vf_args = ["-vf", "format=nv12,hwupload"] if is_vaapi else []
-        pre_args = ["-init_hw_device", "vaapi"] if is_vaapi else []
+        pre_args = ["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"] if is_vaapi else []
 
         cmd = [ffmpeg_exe, "-hide_banner", "-v", "error"] + pre_args + [
             "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1",
@@ -432,7 +431,7 @@ def build_single_pass_cmd(
     filters = []
 
     if "vaapi" in encoder:
-        cmd.extend(["-init_hw_device", "vaapi"])
+        cmd.extend(["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"])
 
     if start is not None:
         cmd.extend(["-ss", str(start)])
