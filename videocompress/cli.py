@@ -7,6 +7,7 @@ Usage:
 
 import sys
 import os
+import logging
 from typing import Optional, List
 
 from videocompress.encode import compress_video
@@ -21,15 +22,18 @@ def main() -> None:
     compression engine.
     """
     if len(sys.argv) < 2:
-        sys.stdout.write("Usage: videocompress <input.mp4> [output.mp4] [size_in_mb] [hevc/h264]\n")
+        sys.stdout.write("Usage: videocompress <input.mp4> [output.mp4] [size_in_mb] [hevc/h264] [--verbose]\n")
         sys.exit(1)
+
+    if "--verbose" in sys.argv or "-v" in sys.argv or os.environ.get("DEBUG") == "1":
+        logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(name)s: %(message)s")
 
     input_file: Optional[str] = None
     output_file: Optional[str] = None
     target_mb: int = DEFAULT_TARGET_MB
     codec_type: str = "hevc"
 
-    raw_args = sys.argv
+    raw_args = [a for a in sys.argv if a not in ("--verbose", "-v")]
     potential_paths: List[str] = []
 
     for i in range(1, len(raw_args)):

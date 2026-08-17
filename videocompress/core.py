@@ -228,7 +228,11 @@ def check_encoder_available(encoder_name: str) -> bool:
             env=get_clean_env(),
         )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+    except subprocess.CalledProcessError as e:
+        log.debug("Encoder %s probe failed with exit code %s: %s", encoder_name, e.returncode, e.stderr)
+        return False
+    except (FileNotFoundError, OSError) as e:
+        log.debug("Encoder %s probe error: %s", encoder_name, e)
         return False
 
 
