@@ -22,6 +22,7 @@ from rich.rule import Rule
 from videocompress.core import (
     MB_TO_BYTES,
     get_resource_path,
+    get_clean_env,
     get_file_size,
     clean_log_file,
     get_video_info,
@@ -122,8 +123,9 @@ def _encode_nvenc_2pass(
                 "-pass", "1", "-passlogfile", log_b, "-f", "null", null_dest
             ]
 
-            pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, text=True, bufsize=0)
-            pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, text=True, bufsize=0)
+            clean_env = get_clean_env()
+            pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
+            pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
 
             ok1 = run_dual_progress(pa, pb, durs[0], durs[1], brs[0], brs[1], "Pass 1/2 - Analysis")
             if not ok1:
@@ -152,8 +154,8 @@ def _encode_nvenc_2pass(
             cmd_a2.extend(["-c:a", "copy", str(p1_path)])
             cmd_b2.extend(["-c:a", "copy", str(p2_path)])
 
-            pa = subprocess.Popen(cmd_a2, stderr=subprocess.PIPE, text=True, bufsize=0)
-            pb = subprocess.Popen(cmd_b2, stderr=subprocess.PIPE, text=True, bufsize=0)
+            pa = subprocess.Popen(cmd_a2, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
+            pb = subprocess.Popen(cmd_b2, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
 
             ok2 = run_dual_progress(pa, pb, durs[0], durs[1], brs[0], brs[1], "Pass 2/2 - Encoding")
             if not ok2:
@@ -169,6 +171,7 @@ def _encode_nvenc_2pass(
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    env=clean_env,
                 )
             console.print()
 
@@ -239,8 +242,9 @@ def _encode_hw_split(
                 ffmpeg_exe, input_path, active_encoder, codec_type, brs[1], fps, float(split_time), None, p2_path, opt_h, opt_fps
             )
 
-            pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=0)
-            pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=0)
+            clean_env = get_clean_env()
+            pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
+            pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
 
             console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
             console.print()
@@ -260,6 +264,7 @@ def _encode_hw_split(
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    env=clean_env,
                 )
             console.print()
 
@@ -334,6 +339,7 @@ def _encode_cpu_single(
             encoding="utf-8",
             errors="ignore",
             bufsize=0,
+            env=get_clean_env(),
         )
 
         console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
