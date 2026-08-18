@@ -101,7 +101,10 @@ def _encode_nvenc_2pass(
                 filters.append(f"scale=-2:{opt_h}")
 
             if "nvenc" in active_encoder:
-                hw_accel = ["-hwaccel", "cuda"]
+                if not filters:
+                    hw_accel = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+                else:
+                    hw_accel = ["-hwaccel", "cuda"]
                 enc_params = ["-preset", "p5"]
             else:
                 hw_accel = ["-hwaccel", "auto"]
@@ -113,14 +116,13 @@ def _encode_nvenc_2pass(
             # PASS 1: Analysis
             console.print(Rule("[bold cyan]Analysis[/]", style="dim"))
             console.print()
-            null_dest = "NUL" if os.name == "nt" else "/dev/null"
             cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [
                 "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
-                "-pass", "1", "-passlogfile", log_a, "-f", "null", null_dest
+                "-pass", "1", "-passlogfile", log_a, "-f", "null", "-"
             ]
             cmd_b1 = base + ["-ss", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [
                 "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
-                "-pass", "1", "-passlogfile", log_b, "-f", "null", null_dest
+                "-pass", "1", "-passlogfile", log_b, "-f", "null", "-"
             ]
 
             clean_env = get_clean_env()
