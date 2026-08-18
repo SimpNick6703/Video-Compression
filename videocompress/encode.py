@@ -116,11 +116,11 @@ def _encode_nvenc_2pass(
             # PASS 1: Analysis
             console.print(Rule("[bold cyan]Analysis[/]", style="dim"))
             console.print()
-            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [
+            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-an"] + vf_args + ["-c:v", active_encoder] + enc_params + [
                 "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
                 "-pass", "1", "-passlogfile", log_a, "-f", "null", "-"
             ]
-            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [
+            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-an"] + vf_args + ["-c:v", active_encoder] + enc_params + [
                 "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
                 "-pass", "1", "-passlogfile", log_b, "-f", "null", "-"
             ]
