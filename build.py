@@ -30,22 +30,10 @@ SOURCE_PACKAGE = "videocompress"
 FFMPEG_BINARIES = ["ffmpeg", "ffprobe"]
 OUTPUT_DIR = "dist"
 
-# FFmpeg download URLs per platform
-FFMPEG_URLS = {
-    "win32": {
-        "url": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
-        "type": "zip"
-    },
-    "linux": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
-        "type": "tar.xz"
-    },
-    "darwin": {
-        "ffmpeg_url": "https://evermeet.cx/ffmpeg/getrelease/zip",
-        "ffprobe_url": "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip",
-        "type": "zip_separate"
-    }
-}
+# Default minimal FFmpeg repository and release tag
+FFMPEG_REPO = os.environ.get("FFMPEG_REPO", "SimpNick6703/ffmpeg-minimal-builds")
+FFMPEG_RELEASE_TAG = os.environ.get("FFMPEG_RELEASE_TAG", "latest")
+
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -55,13 +43,24 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def get_platform_key() -> str:
-    """Return platform key for FFMPEG_URLS."""
+def get_macos_arch() -> str:
+    """Return architecture string for macOS (arm64 or x86_64)."""
+    import platform
+    machine = platform.machine().lower()
+    return "arm64" if "arm" in machine or "aarch64" in machine else "x86_64"
+
+
+def get_ffmpeg_download_info() -> tuple[str, str]:
+    """Resolve FFmpeg download URL and archive type for the current platform."""
+    tag_path = f"download/{FFMPEG_RELEASE_TAG}" if FFMPEG_RELEASE_TAG != "latest" else "latest/download"
+    base_url = f"https://github.com/{FFMPEG_REPO}/releases/{tag_path}"
+
     if sys.platform == "win32":
-        return "win32"
+        return f"{base_url}/ffmpeg-minimal-win-x86_64.zip", "zip"
     elif sys.platform == "darwin":
-        return "darwin"
-    return "linux"
+        arch = get_macos_arch()
+        return f"{base_url}/ffmpeg-minimal-macos-{arch}.tar.gz", "tar"
+    return f"{base_url}/ffmpeg-minimal-linux-x86_64.tar.gz", "tar"
 
 
 def get_platform_suffix() -> str:
@@ -69,7 +68,7 @@ def get_platform_suffix() -> str:
     if sys.platform == "win32":
         return "win64"
     elif sys.platform == "darwin":
-        return "macos"
+        return f"macos-{get_macos_arch()}"
     return "linux"
 
 
@@ -79,7 +78,7 @@ def download_file(url: str, dest: str) -> None:
     short_url = (url[:60] + "...") if len(url) > 60 else url
     log.info("  Downloading from %s", short_url)
     
-    # Use curl if available (handles John Van Sickle / Cloudflare smoothly)
+    # Use curl if available (handles Cloudflare and redirects smoothly)
     if shutil.which("curl"):
         cmd = [
             "curl", "-fsSL", "--retry", "5", "--retry-delay", "3",
@@ -111,70 +110,49 @@ def download_file(url: str, dest: str) -> None:
 
 def download_ffmpeg() -> bool:
     """Download FFmpeg binaries for the current platform."""
-    platform = get_platform_key()
-    config = FFMPEG_URLS.get(platform)
-    
-    if not config:
-        log.error("No FFmpeg download URL configured for platform: %s", platform)
-        return False
-    
-    log.info("Downloading FFmpeg for %s...", platform)
-    
+    url, archive_type = get_ffmpeg_download_info()
+    log.info("Downloading minimal FFmpeg (%s)...", archive_type)
+
     try:
-        if config["type"] == "zip":
-            # Windows: Single zip with bin folder
+        if archive_type == "zip":
             archive_path = "ffmpeg_download.zip"
-            download_file(config["url"], archive_path)
-            
+            download_file(url, archive_path)
+
             with zipfile.ZipFile(archive_path, 'r') as zf:
-                # Find and extract ffmpeg/ffprobe from bin folder
                 for member in zf.namelist():
                     basename = os.path.basename(member)
-                    if basename in ["ffmpeg.exe", "ffprobe.exe"]:
-                        # Extract to current directory with just the filename
+                    if basename in ["ffmpeg.exe", "ffprobe.exe", "ffmpeg", "ffprobe"]:
                         with zf.open(member) as src, open(basename, 'wb') as dst:
                             dst.write(src.read())
+                        if sys.platform != "win32":
+                            os.chmod(basename, 0o755)
                         log.info("  Extracted %s", basename)
-            
+
             os.remove(archive_path)
-            
-        elif config["type"] == "tar.xz":
-            # Linux: tar.xz with binaries in subfolder
-            archive_path = "ffmpeg_download.tar.xz"
-            download_file(config["url"], archive_path)
-            
-            with tarfile.open(archive_path, 'r:xz') as tf:
+
+        elif archive_type == "tar":
+            archive_path = "ffmpeg_download.tar.gz"
+            download_file(url, archive_path)
+
+            with tarfile.open(archive_path, 'r:*') as tf:
                 for member in tf.getmembers():
                     basename = os.path.basename(member.name)
-                    if basename in ["ffmpeg", "ffprobe"]:
-                        # Extract file content to current directory
+                    if basename in ["ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"]:
                         src = tf.extractfile(member)
                         if src is not None:
                             with open(basename, 'wb') as dst:
                                 dst.write(src.read())
                             src.close()
-                            os.chmod(basename, 0o755)
+                            if sys.platform != "win32":
+                                os.chmod(basename, 0o755)
                             log.info("  Extracted %s", basename)
-            
+
             os.remove(archive_path)
-            
-        elif config["type"] == "zip_separate":
-            # macOS: Separate zips for ffmpeg and ffprobe
-            for binary, url_key in [("ffmpeg", "ffmpeg_url"), ("ffprobe", "ffprobe_url")]:
-                archive_path = f"{binary}_download.zip"
-                download_file(config[url_key], archive_path)
-                
-                with zipfile.ZipFile(archive_path, 'r') as zf:
-                    zf.extractall(".")
-                    log.info("  Extracted %s", binary)
-                
-                os.chmod(binary, 0o755)
-                os.remove(archive_path)
-        
+
         return True
-        
+
     except Exception as e:
-        log.error("Failed to download FFmpeg: %s", e)
+        log.error("Failed to download minimal FFmpeg: %s", e)
         return False
 
 

@@ -90,6 +90,29 @@ def get_resource_path(filename: str) -> str:
     return filename
 
 
+def get_clean_env() -> dict[str, str]:
+    """Restore the host environment by clearing PyInstaller's LD_LIBRARY_PATH override.
+
+    Prevents dynamically loaded GPU drivers (e.g., VA-API and CUDA) from failing
+    due to missing or mismatched libraries inside PyInstaller's bundle.
+
+    Returns:
+        Sanitized environment dictionary suitable for subprocess calls.
+
+    Examples:
+        >>> env = get_clean_env()
+        >>> "LD_LIBRARY_PATH" in env
+        False
+    """
+    env = os.environ.copy()
+    if sys.platform.startswith("linux"):
+        if "LD_LIBRARY_PATH_ORIG" in env:
+            env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
 def get_file_size(file_path: str) -> int:
     """Return the file size in bytes.
 
@@ -196,9 +219,20 @@ def check_encoder_available(encoder_name: str) -> bool:
             "-vframes", "1", "-c:v", encoder_name
         ] + vf_args + ["-f", "null", "-"]
 
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=get_clean_env(),
+        )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+    except subprocess.CalledProcessError as e:
+        log.debug("Encoder %s probe failed with exit code %s: %s", encoder_name, e.returncode, e.stderr)
+        return False
+    except (FileNotFoundError, OSError) as e:
+        log.debug("Encoder %s probe error: %s", encoder_name, e)
         return False
 
 
@@ -275,12 +309,13 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
         Tuple of (duration_seconds, file_size_bytes, fps, audio_kbps, width, height), or None on failure.
     """
     ffprobe_exe = get_resource_path("ffprobe")
+    clean_env = get_clean_env()
     try:
         # Get metadata as JSON
         cmd = [ffprobe_exe, "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=width,height,avg_frame_rate",
                "-show_entries", "format=duration", "-of", "json", input_path]
-        res = json.loads(subprocess.check_output(cmd, text=True))
+        res = json.loads(subprocess.check_output(cmd, text=True, env=clean_env))
 
         v_stream = res['streams'][0]
         width = int(v_stream.get('width', 0))
@@ -297,7 +332,7 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
         # Audio probe
         cmd_aud = [ffprobe_exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
         try:
-            aud_out = subprocess.check_output(cmd_aud, text=True).strip()
+            aud_out = subprocess.check_output(cmd_aud, text=True, env=clean_env).strip()
             audio_bps = int(aud_out) if aud_out.isdigit() else 128000
         except subprocess.CalledProcessError:
             audio_bps = 128000 # Default if no audio stream found or probe fails
@@ -321,7 +356,7 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
     log.info("Analyzing for smart split point...")
     try:
         cmd = [get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,size,flags", "-of", "json", input_path]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, env=get_clean_env())
         packets = json.loads(res.stdout).get('packets', [])
 
         target = sum(int(p.get('size', 0)) for p in packets) / 2

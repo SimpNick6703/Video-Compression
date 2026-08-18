@@ -37,11 +37,55 @@ https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669
   - Run in terminal as `./{size}mb-{codec}-linux <input.mp4> [output.mp4] [target_size_in_mb]`
 
 - In MacOS:
-  - Usage steps are the same as Linux (using the `{size}mb-{codec}-macos` executable).
+  - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>) (prebuilt releases target Apple Silicon `{size}mb-{codec}-macos-arm64`).
+  - Make your downloaded file executable: `chmod +x {size}mb-{codec}-macos-arm64`
+  - Run in terminal as `./{size}mb-{codec}-macos-arm64 <input.mp4> [output.mp4]`
   - You may need to allow the application from **Settings > Privacy & Security** since MacOS blocks unsigned applications initially unless allowed.
+  - *(For Intel Macs)*: Simply run `python build.py` on your machine; it will automatically detect `x86_64`, fetch the matching minimal FFmpeg binary, and build native `{size}mb-{codec}-macos-x86_64` executables for you.
 
 > [!NOTE]
 > `{codec}` can be either `hevc` or `h264` depending on the build you downloaded. HEVC offers better compression efficiency, while H.264 offers better compatibility with older devices.
+
+## How to Run (Python CLI)
+
+You can also run the compression tool directly from source via Python without needing to build standalone executables.
+
+### Syntax
+```bash
+python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--verbose]
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|:---|:---|:---|:---|:---|
+| `<input.mp4>` | `string` (Path) | **Yes** | — | Path to the source video file. Must exist on disk. |
+| `[output.mp4]` | `string` (Path) | No | `<input>_<size>mb_<codec>.mp4` | Destination path for the compressed video. |
+| `[target_size_in_mb]` | `integer` | No | `100` | Target file size threshold in megabytes (e.g. `20`, `50`, `100`, `500`). |
+| `[codec]` | `string` | No | `hevc` | Encoding codec: `hevc` (H.265, higher efficiency) or `h264` (H.264, broader compatibility). |
+| `--verbose`, `-v` | `flag` | No | `False` | Enables detailed debug logs and FFmpeg probe output. |
+
+> [!TIP]
+> **Argument order is flexible:** Optional arguments can be provided in any order (e.g. `python -m videocompress input.mp4 50 hevc` or `python -m videocompress input.mp4 hevc 50`). The CLI automatically detects arguments by type: numeric values as target MB size, `hevc`/`h264` as the codec, existing file paths as the input, and any additional path as the output destination.
+
+### Examples
+
+```bash
+# Compress to default 100 MB using HEVC
+python -m videocompress input.mp4
+
+# Compress to 50 MB using HEVC
+python -m videocompress input.mp4 50
+
+# Compress to 20 MB using H.264
+python -m videocompress input.mp4 20 h264
+
+# Custom output destination with 500 MB limit
+python -m videocompress input.mp4 compressed_output.mp4 500 hevc
+
+# Enable debug logs
+python -m videocompress input.mp4 100 hevc --verbose
+```
 
 ## How to Build
 

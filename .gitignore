@@ -8,3 +8,4 @@ ffprobe
 __pycache__/
 *.pyc
 *.pyo
+ffmpeg-minimal-builds/
