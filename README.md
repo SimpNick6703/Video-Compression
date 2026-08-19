@@ -15,7 +15,7 @@ For running the script locally (your own build):
 - CUDA capable GPU for faster encoding (Optional)
 - HEVC or H.264 encoding capable GPU (Optional)
 
-For using prebuilt binaries from releases, you just need to download the executable for your platform; no installation required. To make full use of GPU acceleration, you need a compatible NVIDIA/AMD/Intel GPU that supports hardware-accelerated video encoding.
+For using prebuilt binaries from releases, you just need to download the executable for your platform; no installation required (standalone executables bundle lightweight FFmpeg/FFprobe binaries from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)). To make full use of GPU acceleration, you need a compatible NVIDIA/AMD/Intel GPU that supports hardware-accelerated video encoding.
 
 > [!NOTE]
 > You may view if your Nvidia GPU supports NVENC [here](https://developer.nvidia.com/video-encode-decode-support-matrix) and keep your Nvidia GPU driver version 570.0 or higher.
@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669
   - Make your downloaded file executable: `chmod +x {size}mb-{codec}-macos-arm64`
   - Run in terminal as `./{size}mb-{codec}-macos-arm64 <input.mp4> [output.mp4]`
   - You may need to allow the application from **Settings > Privacy & Security** since MacOS blocks unsigned applications initially unless allowed.
-  - *(For Intel Macs)*: Simply run `python build.py` on your machine; it will automatically detect `x86_64`, fetch the matching minimal FFmpeg binary, and build native `{size}mb-{codec}-macos-x86_64` executables for you.
+  - *(For Intel Macs)*: Simply run `python build.py` on your machine; it will automatically detect `x86_64`, fetch the matching minimal FFmpeg binary from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds), and build native `{size}mb-{codec}-macos-x86_64` executables for you.
 
 > [!NOTE]
 > `{codec}` can be either `hevc` or `h264` depending on the build you downloaded. HEVC offers better compression efficiency, while H.264 offers better compatibility with older devices.
@@ -101,7 +101,7 @@ python build.py
 ```
 
 This will:
-1. Automatically download FFmpeg/FFprobe for your platform (if not already present)
+1. Automatically download minimal FFmpeg/FFprobe binaries for your platform from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) (if not already present)
 2. Generate all preset executables (20mb, 50mb, 100mb, 500mb for both HEVC and H.264 codecs) in `dist/`
 3. Clean up build artifacts and downloaded binaries
 
