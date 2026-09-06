@@ -12,7 +12,23 @@ from typing import Optional, List
 
 from videocompress.encode import compress_video
 
-DEFAULT_TARGET_MB: int = 100
+DEFAULT_TARGET_MB: float = 100.0
+
+
+def _try_parse_positive_float(value: str) -> Optional[float]:
+    """Attempt to parse a string into a positive float.
+
+    Args:
+        value: Input string to parse.
+
+    Returns:
+        Float value if successfully parsed and > 0, else None.
+    """
+    try:
+        f = float(value)
+        return f if f > 0.0 else None
+    except ValueError:
+        return None
 
 
 def main() -> None:
@@ -30,22 +46,25 @@ def main() -> None:
 
     input_file: Optional[str] = None
     output_file: Optional[str] = None
-    target_mb: int = DEFAULT_TARGET_MB
+    target_mb: float = DEFAULT_TARGET_MB
     codec_type: str = "hevc"
 
-    raw_args = [a for a in sys.argv if a not in ("--verbose", "-v")]
+    raw_args = [a for a in sys.argv[1:] if a not in ("--verbose", "-v")]
     potential_paths: List[str] = []
 
-    for i in range(1, len(raw_args)):
-        arg_s = str(raw_args[i])
+    for arg_s in raw_args:
         arg_lower = arg_s.lower()
 
-        if arg_lower in ["hevc", "h264"]:
+        if arg_lower in ("hevc", "h264"):
             codec_type = arg_lower
-        elif arg_s.isdigit():
-            target_mb = int(arg_s)
-        else:
+        elif os.path.exists(arg_s):
             potential_paths.append(arg_s)
+        else:
+            num = _try_parse_positive_float(arg_s)
+            if num is not None:
+                target_mb = num
+            else:
+                potential_paths.append(arg_s)
 
     # First pass: Identify input file (must exist)
     for path in potential_paths:

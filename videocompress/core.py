@@ -8,6 +8,8 @@ import os
 import math
 import json
 import logging
+import shutil
+from pathlib import Path
 from typing import Tuple, Optional, List, Sequence
 
 log = logging.getLogger(__name__)
@@ -74,19 +76,63 @@ def get_display_name(encoder: str) -> str:
 # --- Utility Functions ---
 
 def get_resource_path(filename: str) -> str:
-    """Resolve the absolute path to bundled resources.
+    """Resolve the absolute path to bundled or local resources.
+
+    Follows resolution priority:
+    1. PyInstaller bundled resources (when running inside a frozen bundle)
+    2. Minimal builds directory (ffmpeg-minimal-builds / minimal-builds)
+    3. Folder present (current working directory / repo root)
+    4. System PATH
 
     Args:
         filename: Base executable or file name (e.g., `ffmpeg`).
 
     Returns:
-        Absolute path to the resource, respecting PyInstaller bundling.
+        Absolute path to the resource, or base filename for PATH fallback.
     """
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS # type: ignore
         if sys.platform == 'win32' and not filename.lower().endswith('.exe'):
             filename = f"{filename}.exe"
         return os.path.join(base_path, filename)
+
+    base_name = Path(filename).stem
+    extensions = [".exe", ""] if sys.platform == "win32" else ["", ".exe"]
+
+    # Priority 1: Minimal builds directory (relative to CWD and repo root)
+    search_roots = [
+        Path.cwd() / "ffmpeg-minimal-builds",
+        Path.cwd() / "minimal-builds",
+        Path(__file__).resolve().parent.parent / "ffmpeg-minimal-builds",
+        Path(__file__).resolve().parent.parent / "minimal-builds",
+    ]
+    subdirs = ["", "dist", "bin", "build"]
+
+    for m_root in search_roots:
+        if m_root.is_dir():
+            for sub in subdirs:
+                cand_dir = m_root / sub if sub else m_root
+                if cand_dir.is_dir():
+                    for ext in extensions:
+                        candidate = cand_dir / f"{base_name}{ext}"
+                        if candidate.is_file() and os.access(candidate, os.X_OK):
+                            return str(candidate.resolve())
+
+    # Priority 2: Folder present (current working directory / repo root)
+    folder_roots = [Path.cwd(), Path(__file__).resolve().parent.parent]
+    for f_root in folder_roots:
+        for ext in extensions:
+            candidate = f_root / f"{base_name}{ext}"
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate.resolve())
+
+    # Priority 3: System PATH
+    for ext in extensions:
+        lookup_name = f"{base_name}{ext}" if ext else base_name
+        which_path = shutil.which(lookup_name)
+        if which_path and os.path.isfile(which_path):
+            return str(Path(which_path).resolve())
+
     return filename
 
 
@@ -178,7 +224,7 @@ def calculate_video_bitrate(target_mb: float, duration: float, audio_kbps: int) 
     return math.floor(((video_mb * MB_TO_BITS) / duration / 1000) * BITRATE_SAFETY_FACTOR)
 
 
-def calculate_split_bitrates(target_mb: int, durations: Sequence[float], audio_kbps: int) -> List[int]:
+def calculate_split_bitrates(target_mb: float, durations: Sequence[float], audio_kbps: int) -> List[int]:
     """Calculate per-segment video bitrates for split parallel encoding.
 
     Args:
@@ -299,6 +345,28 @@ def select_best_encoder(codec_type: str = "hevc") -> Tuple[str, List[Tuple[str, 
 
 # --- Video Probing ---
 
+def check_audio_encoder_available(encoder_name: str = "aac") -> bool:
+    """Check if an audio encoder is supported in the active FFmpeg binary.
+
+    Args:
+        encoder_name: Audio encoder to check (e.g., 'aac').
+
+    Returns:
+        True if the encoder is supported, else False.
+    """
+    ffmpeg_exe = get_resource_path("ffmpeg")
+    try:
+        res = subprocess.run(
+            [ffmpeg_exe, "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            env=get_clean_env(),
+        )
+        return f"A..... {encoder_name}" in res.stdout or f"A...D. {encoder_name}" in res.stdout
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
     """Probe video metadata.
 
@@ -311,10 +379,12 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
     ffprobe_exe = get_resource_path("ffprobe")
     clean_env = get_clean_env()
     try:
-        # Get metadata as JSON
-        cmd = [ffprobe_exe, "-v", "error", "-select_streams", "v:0",
-               "-show_entries", "stream=width,height,avg_frame_rate",
-               "-show_entries", "format=duration", "-of", "json", input_path]
+        # Get video metadata as JSON
+        cmd = [
+            ffprobe_exe, "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,avg_frame_rate",
+            "-show_entries", "format=duration", "-of", "json", input_path
+        ]
         res = json.loads(subprocess.check_output(cmd, text=True, env=clean_env))
 
         v_stream = res['streams'][0]
@@ -329,51 +399,86 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
         else:
             fps = float(fps_val)
 
-        # Audio probe
-        cmd_aud = [ffprobe_exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
+        # Audio probe: verify stream presence first to avoid phantom bitrate reservation
+        cmd_aud = [
+            ffprobe_exe, "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=bit_rate", "-of", "json", input_path
+        ]
+        audio_bps = 0
         try:
-            aud_out = subprocess.check_output(cmd_aud, text=True, env=clean_env).strip()
-            audio_bps = int(aud_out) if aud_out.isdigit() else 128000
-        except subprocess.CalledProcessError:
-            audio_bps = 128000 # Default if no audio stream found or probe fails
+            aud_res = json.loads(subprocess.check_output(cmd_aud, text=True, env=clean_env))
+            aud_streams = aud_res.get('streams', [])
+            if aud_streams:
+                raw_br = aud_streams[0].get('bit_rate')
+                if raw_br and str(raw_br).isdigit():
+                    audio_bps = int(raw_br)
+                else:
+                    audio_bps = 128000  # Default fallback if bitrate is VBR/unspecified
+        except (subprocess.CalledProcessError, ValueError, OSError, KeyError, IndexError):
+            audio_bps = 0
 
-        return float(dur_out), get_file_size(input_path), fps, math.ceil(audio_bps / 1000), width, height
+        audio_kbps = math.ceil(audio_bps / 1000) if audio_bps > 0 else 0
+        return float(dur_out), get_file_size(input_path), fps, audio_kbps, width, height
     except (subprocess.CalledProcessError, ValueError, OSError, KeyError, IndexError):
         return None
 
 
 def get_smart_split_point(input_path: str, duration: float) -> float:
-    """Find a keyframe-aligned split point near the middle.
+    """Find a keyframe-aligned split point at 50% of the video's total byte weight.
+
+    Streams packet metadata line-by-line in a single pass with O(1) memory,
+    tracking cumulative byte weight and keyframe checkpoints.
 
     Args:
         input_path: Path to the input media file.
         duration: Total duration in seconds.
 
     Returns:
-        Timestamp in seconds to split the encode. Falls back to duration/2
-        if keyframe analysis fails or no suitable keyframe is found.
+        Timestamp in seconds closest to 50% of byte load. Falls back to duration/2
+        if keyframe analysis fails or no keyframes are found.
     """
     log.info("Analyzing for smart split point...")
+    ffprobe_exe = get_resource_path("ffprobe")
+    cmd = [
+        ffprobe_exe, "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "packet=pts_time,size,flags", "-of", "csv=p=0", input_path
+    ]
+    keyframes: List[Tuple[float, int]] = []
+    total_bytes = 0
+
     try:
-        cmd = [get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,size,flags", "-of", "json", input_path]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, env=get_clean_env())
-        packets = json.loads(res.stdout).get('packets', [])
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, env=get_clean_env()
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            parts = line.strip().split(",")
+            if len(parts) >= 3:
+                try:
+                    pts_time = float(parts[0])
+                    pkt_size = int(parts[1])
+                    flags = parts[2]
+                    total_bytes += pkt_size
+                    if "K" in flags and pts_time > 0.0:
+                        keyframes.append((pts_time, total_bytes))
+                except ValueError:
+                    continue
+        proc.wait()
 
-        target = sum(int(p.get('size', 0)) for p in packets) / 2
-        curr, last_k = 0, 0.0
-
-        for p in packets:
-            curr += int(p.get('size', 0))
-            if 'K' in p.get('flags', ''): last_k = float(p.get('pts_time', 0))
-            if curr >= target: return last_k if last_k > 0 else duration/2
+        if total_bytes > 0 and keyframes:
+            target_bytes = total_bytes / 2
+            best_split = min(keyframes, key=lambda kf: abs(kf[1] - target_bytes))[0]
+            return best_split
     except Exception as e:
         log.warning("Smart split analysis failed (%s). Falling back to midpoint.", e)
+
     return duration / 2
 
 
 # --- Optimization ---
 
-def get_optimal_settings(target_mb: int, duration: float, width: int, height: int, fps: float) -> Tuple[int, float]:
+def get_optimal_settings(target_mb: float, duration: float, width: int, height: int, fps: float) -> Tuple[int, float]:
     """Determine optimal resolution and frame rate based on bits-per-pixel threshold.
 
     Prioritizes maintaining 60+ FPS for gaming content while ensuring visual
@@ -437,37 +542,41 @@ def build_single_pass_cmd(
     codec_type: str,
     bitrate_k: int,
     src_fps: float,
+    src_h: int,
     start: Optional[float],
     end: Optional[float],
     output_path: str,
     tgt_h: int,
-    tgt_fps: float
+    tgt_fps: float,
+    audio_kbps: int = 128,
 ) -> List[str]:
-    """Build a single-pass FFmpeg command for the requested encoder.
+    """Build a single-pass FFmpeg command for hardware encoders.
 
     Args:
         ffmpeg_exe: Path to the ffmpeg executable.
         input_path: Source video path.
         encoder: FFmpeg encoder name.
-        bitrate_k: Target bitrate in kbps.
+        codec_type: "hevc" or "h264".
+        bitrate_k: Target bitrate ceiling in kbps.
         src_fps: Source frames per second.
-        start: Optional start time for segmenting.
-        end: Optional end time for segmenting.
+        src_h: Source height in pixels.
+        start: Optional start timestamp in seconds.
+        end: Optional end timestamp in seconds.
         output_path: Destination video path.
-        tgt_h: Target height for scaling. Uses -2:height format to ensure
-            even width. Set to 0 or equal to source height to skip scaling.
-        tgt_fps: Target frames per second. Set equal to src_fps to skip
-            FPS conversion.
+        tgt_h: Target height for scaling. Set to 0 or equal to src_h to skip scaling.
+        tgt_fps: Target frames per second. Set equal to src_fps to skip FPS conversion.
+        audio_kbps: Probed audio bitrate in kbps (0 for silent video).
 
     Returns:
         A command list ready for subprocess execution.
     """
     cmd: List[str] = [ffmpeg_exe, "-y"]
-    filters = []
+    filters: List[str] = []
 
     if "vaapi" in encoder:
         cmd.extend(["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"])
 
+    # Fast input seeking placed before -i
     if start is not None:
         cmd.extend(["-ss", str(start)])
     if end is not None:
@@ -475,43 +584,182 @@ def build_single_pass_cmd(
 
     cmd.extend(["-i", input_path])
 
+    if start is not None or end is not None:
+        cmd.extend(["-avoid_negative_ts", "make_zero"])
+
     # Build Filters
-    if tgt_fps < src_fps: filters.append(f"fps={tgt_fps}")
+    if tgt_fps < src_fps:
+        filters.append(f"fps={tgt_fps}")
 
-    # Scale Filter: -2:height ensures width is even (divisible by 2) while keeping aspect ratio
-    # If using -1, encoders often fail with odd pixel counts (e.g. 853x480). -2 gives 854x480.
-    if tgt_h > 0: filters.append(f"scale=-2:{tgt_h}")
+    # Scale filter: only apply if target height differs from source
+    if tgt_h > 0 and tgt_h != src_h:
+        filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
 
-    # Encoder Specific Filter Chains
+    # Format normalization & hardware surface handling
     if "vaapi" in encoder:
         filters.append("format=nv12,hwupload")
-        cmd.extend(["-vf", ",".join(filters)] if filters else ["-vf", "format=nv12,hwupload"])
-    elif encoder == "libx265":
-        if not any("fps" in f for f in filters): filters.append(f"fps={src_fps}")
         cmd.extend(["-vf", ",".join(filters)])
-    elif encoder == "libx264":
-        if not any("fps" in f for f in filters): filters.append(f"fps={src_fps}")
+    elif codec_type == "h264":
+        filters.append("format=yuv420p")
         cmd.extend(["-vf", ",".join(filters)])
     else:
-        if filters: cmd.extend(["-vf", ",".join(filters)])
+        if filters:
+            cmd.extend(["-vf", ",".join(filters)])
 
     cmd.extend(["-c:v", encoder, "-b:v", f"{bitrate_k}k"])
 
-    if "amf" in encoder:
-        cmd.extend(["-usage", "transcoding", "-quality", "balanced", "-rc", "cbr"])
+    # Hardware rate control (Constrained VBR ceiling)
+    if "nvenc" in encoder:
+        cmd.extend([
+            "-rc:v", "vbr",
+            "-preset", "p5",
+            "-multipass", "fullres",
+            "-rc-lookahead", "32",
+            "-spatial-aq", "1",
+            "-temporal-aq", "1",
+        ])
+    elif "amf" in encoder:
+        cmd.extend([
+            "-usage", "transcoding",
+            "-quality", "quality",
+            "-rc", "vbr_peak",
+            "-preanalysis", "1",
+            "-vbaq", "1",
+        ])
     elif "qsv" in encoder:
-        if "hevc" in encoder: cmd.extend(["-load_plugin", "hevc_hw"])
-        cmd.extend(["-preset", "medium"])
+        cmd.extend([
+            "-preset", "medium",
+            "-look_ahead", "1",
+            "-look_ahead_depth", "40",
+        ])
     elif "videotoolbox" in encoder:
         cmd.extend(["-allow_sw", "1", "-realtime", "0"])
+    elif encoder in ("libx265", "libx264"):
+        cmd.extend(["-preset", "medium"])
+
+    if codec_type == "hevc":
+        cmd.extend(["-tag:v", "hvc1"])
+    elif codec_type == "h264":
+        cmd.extend(["-tag:v", "avc1"])
+
+    cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k * 2}k"])
+
+    # Stream mapping
+    cmd.extend(["-map", "0:v:0"])
+
+    # Audio Handling
+    if audio_kbps == 0:
+        cmd.append("-an")
+    else:
+        cmd.extend(["-map", "0:a:0?"])
+        if audio_kbps > 160 and check_audio_encoder_available("aac"):
+            cmd.extend(["-c:a", "aac", "-b:a", "128k", "-ac", "2"])
+        else:
+            cmd.extend(["-c:a", "copy"])
+
+    # Single-pipe progress streaming on stderr
+    cmd.extend([
+        "-movflags", "+faststart",
+        "-loglevel", "error",
+        "-progress", "pipe:2",
+        "-nostats",
+        output_path,
+    ])
+    return cmd
+
+
+def build_cpu_pass_cmd(
+    ffmpeg_exe: str,
+    input_path: str,
+    encoder: str,
+    codec_type: str,
+    bitrate_k: int,
+    src_fps: float,
+    src_h: int,
+    pass_num: int,
+    pass_log_prefix: str,
+    output_path: str,
+    tgt_h: int,
+    tgt_fps: float,
+    audio_kbps: int = 128,
+) -> List[str]:
+    """Build a CPU two-pass FFmpeg command for libx264 / libx265.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        input_path: Source video path.
+        encoder: FFmpeg encoder name ("libx264" or "libx265").
+        codec_type: "hevc" or "h264".
+        bitrate_k: Target bitrate in kbps.
+        src_fps: Source frames per second.
+        src_h: Source height in pixels.
+        pass_num: 1 for analysis pass, 2 for encoding pass.
+        pass_log_prefix: Path prefix for two-pass log files.
+        output_path: Destination video path.
+        tgt_h: Target height for scaling. Set to 0 or equal to src_h to skip.
+        tgt_fps: Target frames per second. Set equal to src_fps to skip.
+        audio_kbps: Probed audio bitrate in kbps.
+
+    Returns:
+        A command list ready for subprocess execution.
+    """
+    cmd: List[str] = [ffmpeg_exe, "-y", "-i", input_path]
+    filters: List[str] = []
+
+    if tgt_fps < src_fps:
+        filters.append(f"fps={tgt_fps}")
+
+    if tgt_h > 0 and tgt_h != src_h:
+        filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
+
+    if codec_type == "h264":
+        filters.append("format=yuv420p")
+
+    if filters:
+        cmd.extend(["-vf", ",".join(filters)])
+
+    cmd.extend(["-c:v", encoder, "-b:v", f"{bitrate_k}k"])
+
+    if encoder == "libx264":
+        cmd.extend(["-preset", "medium"])
+        if pass_num == 1:
+            cmd.extend(["-pass", "1", "-fastfirstpass", "1", "-passlogfile", pass_log_prefix])
+        else:
+            cmd.extend(["-pass", "2", "-passlogfile", pass_log_prefix])
     elif encoder == "libx265":
         cmd.extend(["-preset", "medium"])
-    elif encoder == "libx264":
-        cmd.extend(["-preset", "medium"])
+        stats_path = f"{pass_log_prefix}_x265.log".replace("\\", "/")
+        if pass_num == 1:
+            cmd.extend(["-x265-params", f"pass=1:stats={stats_path}:slow-firstpass=0:no-sao=1"])
+        else:
+            cmd.extend(["-x265-params", f"pass=2:stats={stats_path}:no-sao=1"])
 
-    if codec_type == "hevc": cmd.extend(["-tag:v", "hvc1"])
-    elif codec_type == "h264": cmd.extend(["-tag:v", "avc1"])
+    if codec_type == "hevc":
+        cmd.extend(["-tag:v", "hvc1"])
+    elif codec_type == "h264":
+        cmd.extend(["-tag:v", "avc1"])
 
-    cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k*2}k"])
-    cmd.extend(["-c:a", "copy", "-loglevel", "error", "-stats", output_path])
+    cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k * 2}k"])
+    cmd.extend(["-map", "0:v:0"])
+
+    if pass_num == 1:
+        cmd.extend(["-an", "-loglevel", "error", "-progress", "pipe:2", "-nostats", "-f", "null", "-"])
+    else:
+        if audio_kbps == 0:
+            cmd.append("-an")
+        else:
+            cmd.extend(["-map", "0:a:0?"])
+            if audio_kbps > 160 and check_audio_encoder_available("aac"):
+                cmd.extend(["-c:a", "aac", "-b:a", "128k", "-ac", "2"])
+            else:
+                cmd.extend(["-c:a", "copy"])
+
+        cmd.extend([
+            "-movflags", "+faststart",
+            "-loglevel", "error",
+            "-progress", "pipe:2",
+            "-nostats",
+            output_path,
+        ])
+
     return cmd

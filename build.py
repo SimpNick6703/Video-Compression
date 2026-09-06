@@ -156,32 +156,46 @@ def download_ffmpeg() -> bool:
         return False
 
 
-def find_binary(name: str) -> str:
-    """Find a binary in current directory or PATH."""
-    if sys.platform == "win32":
-        local_exe = Path(f"{name}.exe")
-        if local_exe.exists():
-            return str(local_exe.absolute())
-    
-    local_path = Path(name)
-    if local_path.exists():
-        return str(local_path.absolute())
-    
-    result = shutil.which(name)
-    if result:
-        return result
-    
-    raise FileNotFoundError(f"Could not find {name} in current directory or PATH")
-
-
-def check_ffmpeg_available() -> bool:
-    """Check if ffmpeg and ffprobe are available."""
+def check_root_ffmpeg_present() -> bool:
+    """Check if both ffmpeg and ffprobe are present directly in the root directory."""
+    repo_root = Path(__file__).resolve().parent
     for binary in FFMPEG_BINARIES:
-        try:
-            find_binary(binary)
-        except FileNotFoundError:
+        ext = ".exe" if sys.platform == "win32" else ""
+        candidate = repo_root / f"{binary}{ext}"
+        if not (candidate.is_file() and os.access(candidate, os.X_OK)):
             return False
     return True
+
+
+def find_binary(name: str) -> str:
+    """Find a binary in the root directory, falling back to system PATH.
+
+    Args:
+        name: Binary base name ('ffmpeg' or 'ffprobe').
+
+    Returns:
+        Absolute path to the resolved binary.
+
+    Raises:
+        FileNotFoundError: If binary is not found in the root directory or PATH.
+    """
+    repo_root = Path(__file__).resolve().parent
+    extensions = [".exe", ""] if sys.platform == "win32" else ["", ".exe"]
+
+    # 1. Root folder present
+    for ext in extensions:
+        candidate = repo_root / f"{name}{ext}"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate.resolve())
+
+    # 2. System PATH fallback
+    for ext in extensions:
+        lookup_name = f"{name}{ext}" if ext else name
+        which_path = shutil.which(lookup_name)
+        if which_path and os.path.isfile(which_path):
+            return str(Path(which_path).resolve())
+
+    raise FileNotFoundError(f"Could not find '{name}' in root directory or system PATH")
 
 
 def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
@@ -226,7 +240,7 @@ def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str
         try:
             binary_path = find_binary(binary)
             add_binary_args.extend(["--add-binary", f"{binary_path}{separator}."])
-            log.info("  Bundling %s", binary)
+            log.info("  Bundling %s (from %s)", binary, binary_path)
         except FileNotFoundError as e:
             log.warning("  %s", e)
     
@@ -256,13 +270,13 @@ def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str
         return False
 
 
-def clean_build_artifacts(include_ffmpeg: bool = True):
+def clean_build_artifacts(include_ffmpeg: bool = False):
     """Remove build artifacts (build/, *.spec) and optionally FFmpeg binaries."""
     dirs_to_remove = ["build"]
     files_to_remove = list(Path(".").glob("*.spec"))
     
     if include_ffmpeg:
-        # Also remove downloaded FFmpeg binaries
+        # Also remove downloaded FFmpeg binaries if explicitly requested
         for binary in FFMPEG_BINARIES:
             if sys.platform == "win32":
                 files_to_remove.append(Path(f"{binary}.exe"))
@@ -282,22 +296,24 @@ def clean_build_artifacts(include_ffmpeg: bool = True):
 
 def main() -> int:
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
+    clean_ffmpeg = "--clean-ffmpeg" in sys.argv
     
     # Validate source package exists
     if not os.path.isdir(SOURCE_PACKAGE):
         log.error("Source package directory '%s' not found", SOURCE_PACKAGE)
         return 1
     
-    # Check if FFmpeg is available, download if not
-    ffmpeg_downloaded = False
-    if not check_ffmpeg_available():
-        log.info("FFmpeg not found locally, downloading...")
-        if not download_ffmpeg():
-            log.error("Failed to obtain FFmpeg binaries")
-            return 1
-        ffmpeg_downloaded = True
+    # Check if FFmpeg is already present in the root folder, download minimal build if not
+    if check_root_ffmpeg_present():
+        log.info("FFmpeg and FFprobe already present in root folder (skipping download)")
     else:
-        log.info("FFmpeg binaries found")
+        log.info("FFmpeg binaries not found in root folder. Downloading from %s/releases/%s...", FFMPEG_REPO, FFMPEG_RELEASE_TAG)
+        if not download_ffmpeg():
+            if all(shutil.which(b) for b in FFMPEG_BINARIES):
+                log.warning("Download failed, but found FFmpeg in system PATH. Continuing with PATH fallback...")
+            else:
+                log.error("Failed to obtain FFmpeg binaries")
+                return 1
     
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -333,7 +349,7 @@ def main() -> int:
     # Clean build artifacts by default (unless --verbose)
     if not verbose:
         log.info("Cleaning build artifacts...")
-        clean_build_artifacts(include_ffmpeg=ffmpeg_downloaded)
+        clean_build_artifacts(include_ffmpeg=clean_ffmpeg)
     
     # Summary
     log.info("=" * 40)
