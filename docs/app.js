@@ -1,34 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Theme Toggle Logic ---
-    const themeBtn = document.getElementById('theme-toggle');
-    const sunIcon = document.getElementById('icon-sun');
-    const moonIcon = document.getElementById('icon-moon');
-    let encodeChart = null;
-
-    function toggleTheme() {
-        document.body.classList.toggle('light-mode');
-        const isLight = document.body.classList.contains('light-mode');
-        
-        // Icon visibility swap
-        if(isLight) {
-            sunIcon.classList.remove('hidden');
-            moonIcon.classList.add('hidden');
-        } else {
-            sunIcon.classList.add('hidden');
-            moonIcon.classList.remove('hidden');
-        }
-
-        // Update Chart Colors
-        if(encodeChart) {
-            Chart.defaults.color = isLight ? '#475569' : '#94a3b8';
-            Chart.defaults.borderColor = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)';
-            encodeChart.update();
-        }
-    }
-
-    if(themeBtn) {
-        themeBtn.addEventListener('click', toggleTheme);
-    }
+    // Ensure dark mode only
+    document.body.classList.remove('light-mode');
+    try {
+        localStorage.removeItem('theme');
+    } catch(e) {}
 
     // --- Navigation Logic ---
     const navBtns = document.querySelectorAll('.nav-btn');
@@ -45,7 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             sections.forEach(sec => sec.classList.add('hidden-section'));
             const target = document.getElementById(btn.dataset.target);
-            if(target) target.classList.remove('hidden-section');
+            if(target) {
+                target.classList.remove('hidden-section');
+            }
         });
     });
 
@@ -168,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         win: {
             title: "Windows Execution Priority", icon: "fa-windows", color: "text-blue-400",
             chain: [
-                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Supports parallel 2-pass.", icon: "fa-microchip" },
+                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Supports parallel split single-pass.", icon: "fa-microchip" },
                 { name: "AMD AMF", desc: "H.265/H.264 via AMD's Media Framework.", icon: "fa-microchip" },
                 { name: "Intel Quick Sync (QSV)", desc: "H.265/H.264 via Intel's integrated GPU.", icon: "fa-microchip" },
                 { name: "CPU Fallback (libx265/libx264)", desc: "Software encoding. Most compatible, but slowest.", icon: "fa-server" }
@@ -178,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lin: {
             title: "Linux Execution Priority", icon: "fa-linux", color: "text-yellow-400",
             chain: [
-                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Supports parallel 2-pass.", icon: "fa-microchip" },
+                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Supports parallel split single-pass.", icon: "fa-microchip" },
                 { name: "VA-API", desc: "Unified API for AMD and Intel hardware acceleration.", icon: "fa-layer-group" },
                 { name: "CPU Fallback (libx265/libx264)", desc: "Software encoding. Most compatible, but slowest.", icon: "fa-server" }
             ],
@@ -224,4 +201,243 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
 
     renderChain('win');
+
+    // --- Dataflow Visualizer Logic ---
+    const dataflowProfiles = {
+        unscaled: {
+            title: "Hardware Native Unscaled (1080p60)",
+            badge: "Direct Hardware Path",
+            badgeClass: "bg-cyan-900/40 text-cyan-400 border-cyan-500/40",
+            note: "Zero-copy VRAM execution with zero software scaling copies.",
+            summary: "Frames are demuxed from storage and streamed as compressed NAL packets across PCIe into GPU VRAM. NVDEC decodes into CUDA surfaces, the frame scaling filter is completely bypassed (zero software pixel copies), and NVENC encodes directly on-chip. Only compressed bitstream traverses PCIe.",
+            pcie: "~545 MB Total",
+            pcieSub: "99.1% Bus Reduction",
+            pixfmt: "pix_fmt: cuda",
+            pixfmtSub: "VRAM Hardware Surface",
+            scale: "Bypassed",
+            scaleSub: "Zero Pixel Copies",
+            cpu: "< 5% Load",
+            cpuSub: "Light Demux / Telemetry",
+            scaleLabel: "CPU Lanczos Scale",
+            scaleStatus: "Bypassed (Native)",
+            h2dVol: "~457 MB (Stream)",
+            d2hVol: "~88.5 MB (Muxed)",
+            busStatus: "Minimal (~2 MB/s)",
+            busStatusClass: "text-emerald-400",
+            nodes: { storage: true, host: true, pcie: true, gpu: true }
+        },
+        downscaled: {
+            title: "Hardware Downscaled (720p60 Hybrid)",
+            badge: "PCIe Roundtrip Path",
+            badgeClass: "bg-amber-900/40 text-amber-400 border-amber-500/40",
+            note: "Decoded on NVDEC, downloaded to Host RAM for CPU Lanczos scaling, and uploaded back to NVENC.",
+            summary: "NVDEC decompresses 1080p frames in VRAM. Because standard scale is a CPU software filter (libswscale), FFmpeg automatically downloads decoded frames across PCIe to Host System RAM (~44 GB D2H). The CPU runs Lanczos scaling on the host, and uploads 720p frames across PCIe back to NVENC (~19 GB H2D) for encoding.",
+            pcie: "~64.4 GB Total",
+            pcieSub: "44.2 GB D2H + 19.6 GB H2D",
+            pixfmt: "pix_fmt: nv12",
+            pixfmtSub: "Software Host Buffer",
+            scale: "CPU Software",
+            scaleSub: "Lanczos Filter (libswscale)",
+            cpu: "~30% - 40%",
+            cpuSub: "CPU Scaling Workload",
+            scaleLabel: "CPU Lanczos Scale",
+            scaleStatus: "Active (720p)",
+            h2dVol: "~19.65 GB (720p)",
+            d2hVol: "~44.22 GB (1080p)",
+            busStatus: "Heavy (~1.6 GB/s)",
+            busStatusClass: "text-amber-400",
+            nodes: { storage: true, host: true, pcie: true, gpu: true }
+        },
+        cpu: {
+            title: "CPU Software Fallback (libx265 / libx264)",
+            badge: "Pure Host RAM Path",
+            badgeClass: "bg-violet-900/40 text-violet-400 border-violet-500/40",
+            note: "Fully host-bound execution. No GPU silicon or PCIe bus utilization.",
+            summary: "Executed when no compatible hardware GPU encoder is available. Video decoding, Lanczos scaling, and HEVC/H.264 compression operate entirely within host CPU threads and System RAM. No frames or bitstreams cross the PCIe bus into GPU memory.",
+            pcie: "0 MB",
+            pcieSub: "Zero PCIe Bus Activity",
+            pixfmt: "yuv420p / nv12",
+            pixfmtSub: "Host System Memory",
+            scale: "CPU Software",
+            scaleSub: "Lanczos on CPU Cores",
+            cpu: "90% - 100%",
+            cpuSub: "Multi-Core CPU Bound",
+            scaleLabel: "CPU Lanczos Scale",
+            scaleStatus: "Active (CPU Cores)",
+            h2dVol: "0 MB (Idle)",
+            d2hVol: "0 MB (Idle)",
+            busStatus: "Inactive (0 MB/s)",
+            busStatusClass: "text-slate-500",
+            nodes: { storage: true, host: true, pcie: false, gpu: false }
+        },
+        zerocopy: {
+            title: "Zero-Copy GPU Target (scale_cuda Architecture)",
+            badge: "100% VRAM Resident",
+            badgeClass: "bg-emerald-900/40 text-emerald-400 border-emerald-500/40",
+            note: "Decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
+            summary: "The target hardware pipeline using scale_cuda=-2:H:interp_algo=lanczos. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
+            pcie: "~545 MB Total",
+            pcieSub: "True Zero-Copy Pipeline",
+            pixfmt: "pix_fmt: cuda",
+            pixfmtSub: "On-Chip VRAM Resident",
+            scale: "GPU CUDA Cores",
+            scaleSub: "Hardware scale_cuda",
+            cpu: "< 3% Load",
+            cpuSub: "Near-Zero CPU Footprint",
+            scaleLabel: "CUDA Core Resizer",
+            scaleStatus: "Active (in VRAM)",
+            h2dVol: "~457 MB (Stream)",
+            d2hVol: "~88.5 MB (Muxed)",
+            busStatus: "Minimal (~2 MB/s)",
+            busStatusClass: "text-emerald-400",
+            nodes: { storage: true, host: true, pcie: true, gpu: true }
+        }
+    };
+
+    function renderDataflowMode(modeKey) {
+        const p = dataflowProfiles[modeKey] || dataflowProfiles.unscaled;
+
+        const titleEl = document.getElementById('df-mode-title');
+        const badgeEl = document.getElementById('df-mode-badge');
+        const noteEl = document.getElementById('df-mode-note');
+        const summaryEl = document.getElementById('df-mode-summary');
+
+        if(titleEl) titleEl.textContent = p.title;
+        if(badgeEl) {
+            badgeEl.className = `text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 border ${p.badgeClass}`;
+            badgeEl.textContent = p.badge;
+        }
+        if(noteEl) noteEl.textContent = p.note;
+        if(summaryEl) summaryEl.textContent = p.summary;
+
+        // Update Spec Cards
+        const mPcie = document.getElementById('metric-pcie');
+        const mPcieSub = document.getElementById('metric-pcie-sub');
+        const mPixfmt = document.getElementById('metric-pixfmt');
+        const mPixfmtSub = document.getElementById('metric-pixfmt-sub');
+        const mScale = document.getElementById('metric-scale');
+        const mScaleSub = document.getElementById('metric-scale-sub');
+        const mCpu = document.getElementById('metric-cpu');
+        const mCpuSub = document.getElementById('metric-cpu-sub');
+
+        if(mPcie) mPcie.textContent = p.pcie;
+        if(mPcieSub) mPcieSub.textContent = p.pcieSub;
+        if(mPixfmt) mPixfmt.textContent = p.pixfmt;
+        if(mPixfmtSub) mPixfmtSub.textContent = p.pixfmtSub;
+        if(mScale) mScale.textContent = p.scale;
+        if(mScaleSub) mScaleSub.textContent = p.scaleSub;
+        if(mCpu) mCpu.textContent = p.cpu;
+        if(mCpuSub) mCpuSub.textContent = p.cpuSub;
+
+        // Update Domain Nodes
+        const domStorage = document.getElementById('domain-storage');
+        const domHost = document.getElementById('domain-host');
+        const domPcie = document.getElementById('domain-pcie');
+        const domGpu = document.getElementById('domain-gpu');
+
+        const setNodeState = (el, active) => {
+            if(!el) return;
+            el.classList.remove('flow-node-active', 'flow-node-dim');
+            el.classList.add(active ? 'flow-node-active' : 'flow-node-dim');
+        };
+
+        setNodeState(domStorage, p.nodes.storage);
+        setNodeState(domHost, p.nodes.host);
+        setNodeState(domPcie, p.nodes.pcie);
+        setNodeState(domGpu, p.nodes.gpu);
+
+        // Update Node Sub-elements
+        const scaleLbl = document.getElementById('df-scale-label');
+        const scaleStat = document.getElementById('df-scale-status');
+        const h2dVol = document.getElementById('df-h2d-vol');
+        const d2hVol = document.getElementById('df-d2h-vol');
+        const busStat = document.getElementById('df-bus-status');
+
+        if(scaleLbl) scaleLbl.textContent = p.scaleLabel;
+        if(scaleStat) scaleStat.textContent = p.scaleStatus;
+        if(h2dVol) h2dVol.textContent = p.h2dVol;
+        if(d2hVol) d2hVol.textContent = p.d2hVol;
+        if(busStat) {
+            busStat.className = p.busStatusClass;
+            busStat.textContent = p.busStatus;
+        }
+    }
+
+    // --- PHYSICAL SCHEMATIC VIEW CONTROLLER ---
+    const schematicBtns = document.querySelectorAll('#schematic-view-controls button');
+    const cardPath1 = document.getElementById('schematic-card-path1');
+    const cardPath2 = document.getElementById('schematic-card-path2');
+    const cardPath3 = document.getElementById('schematic-card-path3');
+    const schematicContainer = document.getElementById('schematic-cards-container');
+
+    function setSchematicView(viewKey) {
+        schematicBtns.forEach(btn => {
+            const isMatch = btn.dataset.schematic === viewKey;
+            btn.classList.toggle('schematic-btn-active', isMatch);
+            btn.classList.toggle('text-slate-400', !isMatch);
+            btn.classList.remove('text-amber-400', 'text-emerald-400', 'text-cyan-400', 'text-purple-400', 'text-white');
+            if(isMatch) {
+                if(viewKey === 'all') btn.classList.add('text-white');
+                if(viewKey === 'path1' || viewKey === 'cpu') btn.classList.add('text-purple-400');
+                if(viewKey === 'path2' || viewKey === 'hybrid') btn.classList.add('text-amber-400');
+                if(viewKey === 'path3' || viewKey === 'zerocopy') btn.classList.add('text-emerald-400');
+                if(viewKey === 'compare') btn.classList.add('text-cyan-400');
+            }
+        });
+
+        // Hide all cards first
+        [cardPath1, cardPath2, cardPath3].forEach(card => {
+            if(card) card.classList.add('hidden');
+        });
+
+        if(schematicContainer) {
+            schematicContainer.classList.remove('lg:grid', 'lg:grid-cols-2', 'gap-6');
+        }
+
+        if(viewKey === 'all') {
+            if(cardPath1) cardPath1.classList.remove('hidden');
+            if(cardPath2) cardPath2.classList.remove('hidden');
+            if(cardPath3) cardPath3.classList.remove('hidden');
+        } else if(viewKey === 'path1' || viewKey === 'cpu') {
+            if(cardPath1) cardPath1.classList.remove('hidden');
+        } else if(viewKey === 'path2' || viewKey === 'hybrid') {
+            if(cardPath2) cardPath2.classList.remove('hidden');
+        } else if(viewKey === 'path3' || viewKey === 'zerocopy') {
+            if(cardPath3) cardPath3.classList.remove('hidden');
+        } else if(viewKey === 'compare') {
+            if(cardPath2) cardPath2.classList.remove('hidden');
+            if(cardPath3) cardPath3.classList.remove('hidden');
+            if(schematicContainer) {
+                schematicContainer.classList.add('lg:grid', 'lg:grid-cols-2', 'gap-6');
+            }
+        }
+    }
+
+    schematicBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            setSchematicView(btn.dataset.schematic);
+        });
+    });
+
+    document.querySelectorAll('.df-mode-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            const b = e.target.closest('button');
+            if(!b) return;
+            document.querySelectorAll('.df-mode-btn').forEach(x => {
+                x.classList.remove('mode-btn-active');
+            });
+            b.classList.add('mode-btn-active');
+            renderDataflowMode(b.dataset.mode);
+
+            if(b.dataset.mode === 'downscaled') {
+                setSchematicView('path2');
+            } else if(b.dataset.mode === 'zerocopy' || b.dataset.mode === 'unscaled') {
+                setSchematicView('path3');
+            } else if(b.dataset.mode === 'cpu') {
+                setSchematicView('path1');
+            }
+        });
+    });
+
+    renderDataflowMode('unscaled');
 });
