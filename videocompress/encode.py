@@ -3,9 +3,8 @@ Encoding orchestration and encoder-specific execution pipelines.
 
 Provides:
   - `compress_video`: Main orchestrator for video compression
-  - `_encode_nvenc_2pass`: Parallel 2-pass split pipeline (NVENC / Windows AMF)
-  - `_encode_hw_split`: Parallel split single-pass pipeline (VAAPI, QSV, VideoToolbox)
-  - `_encode_cpu_single`: Serial single-pass pipeline (CPU fallback: libx265, libx264)
+  - `_encode_hw_split`: Parallel split single-pass pipeline for hardware encoders
+  - `_encode_cpu_single`: Serial single-pass pipeline for CPU fallback (libx265, libx264)
 """
 
 import os
@@ -30,7 +29,6 @@ from videocompress.core import (
     get_optimal_settings,
     select_best_encoder,
     build_single_pass_cmd,
-    build_cpu_pass_cmd,
     calculate_video_bitrate,
     calculate_split_bitrates,
 )
@@ -167,7 +165,7 @@ def _encode_hw_split(
                         pass
 
 
-def _encode_cpu_2pass(
+def _encode_cpu_single(
     ffmpeg_exe: str,
     input_path: str,
     output_path: str,
@@ -181,7 +179,7 @@ def _encode_cpu_2pass(
     opt_h: int,
     opt_fps: float,
 ) -> Tuple[bool, str]:
-    """Execute serial two-pass encoding for CPU software fallback (libx265, libx264).
+    """Execute serial single-pass encoding for CPU software fallback (libx265, libx264).
 
     Args:
         ffmpeg_exe: Path to the ffmpeg executable.
@@ -199,15 +197,18 @@ def _encode_cpu_2pass(
 
     Returns:
         Tuple of (success flag, error message).
+
+    Example:
+        >>> ok, err = _encode_cpu_single(
+        ...     "ffmpeg", "in.mp4", "out.mp4", "libx265", "hevc", 100.0, 120.0, 128, 60.0, 1080, 720, 30.0
+        ... )
     """
     bitrate_k = calculate_video_bitrate(float(target_size_mb), duration, audio_kbps)
     clean_env = get_clean_env()
+    process: Optional[subprocess.Popen[str]] = None
 
-    with tempfile.TemporaryDirectory(prefix="vidcomp_cpu_", ignore_cleanup_errors=True) as temp_dir:
-        pass_log_prefix = os.path.join(temp_dir, "cpu_pass")
-
-        # PASS 1: Analysis
-        cmd_p1 = build_cpu_pass_cmd(
+    try:
+        cmd = build_single_pass_cmd(
             ffmpeg_exe=ffmpeg_exe,
             input_path=input_path,
             encoder=active_encoder,
@@ -215,87 +216,39 @@ def _encode_cpu_2pass(
             bitrate_k=bitrate_k,
             src_fps=fps,
             src_h=src_h,
-            pass_num=1,
-            pass_log_prefix=pass_log_prefix,
+            start=None,
+            end=None,
             output_path=output_path,
             tgt_h=opt_h,
             tgt_fps=opt_fps,
             audio_kbps=audio_kbps,
         )
-
-        p1_proc: Optional[subprocess.Popen[str]] = None
-        try:
-            p1_proc = subprocess.Popen(
-                cmd_p1,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                env=clean_env,
-            )
-            console.print(Rule("[bold cyan]Analysis[/]", style="dim"))
-            console.print()
-            ok1 = run_single_progress(p1_proc, duration, bitrate_k, pass_label="Pass 1/2 - Analysis")
-            console.print()
-            if not ok1:
-                return False, "CPU Pass 1 Failed"
-            console.print("[bold green]  Pass 1 complete.[/]\n")
-        except KeyboardInterrupt:
-            console.print("\n[bold red]Cancelling...[/]")
-            raise
-        finally:
-            if p1_proc and p1_proc.poll() is None:
-                try:
-                    p1_proc.kill()
-                    p1_proc.wait(timeout=1.0)
-                except Exception:
-                    pass
-
-        # PASS 2: Encoding
-        cmd_p2 = build_cpu_pass_cmd(
-            ffmpeg_exe=ffmpeg_exe,
-            input_path=input_path,
-            encoder=active_encoder,
-            codec_type=codec_type,
-            bitrate_k=bitrate_k,
-            src_fps=fps,
-            src_h=src_h,
-            pass_num=2,
-            pass_log_prefix=pass_log_prefix,
-            output_path=output_path,
-            tgt_h=opt_h,
-            tgt_fps=opt_fps,
-            audio_kbps=audio_kbps,
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=clean_env,
         )
-
-        p2_proc: Optional[subprocess.Popen[str]] = None
-        try:
-            p2_proc = subprocess.Popen(
-                cmd_p2,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                env=clean_env,
-            )
-            console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
-            console.print()
-            ok2 = run_single_progress(p2_proc, duration, bitrate_k, pass_label="Pass 2/2 - Encoding")
-            console.print()
-            if not ok2:
-                return False, "CPU Pass 2 Failed"
-            console.print("[bold green]  Pass 2 complete.[/]\n")
-            return True, ""
-        except KeyboardInterrupt:
-            console.print("\n[bold red]Cancelling...[/]")
-            raise
-        finally:
-            if p2_proc and p2_proc.poll() is None:
-                try:
-                    p2_proc.kill()
-                    p2_proc.wait(timeout=1.0)
-                except Exception:
-                    pass
+        console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
+        console.print()
+        success = run_single_progress(process, duration, bitrate_k, pass_label="Pass 1/1 - Encoding")
+        console.print()
+        return (True, "") if success else (False, "CPU Encode Failed")
+    except KeyboardInterrupt:
+        console.print("\n[bold red]Cancelling...[/]")
+        return False, "Cancelled by user"
+    except Exception as e:
+        log.error(f"CPU single-pass encode error: {e}")
+        return False, f"CPU encode error: {e}"
+    finally:
+        if process and process.poll() is None:
+            try:
+                process.kill()
+                process.wait(timeout=1.0)
+            except Exception:
+                pass
 
 
 def compress_video(
@@ -307,7 +260,7 @@ def compress_video(
     """Compress a video to an approximate target size ceiling.
 
     Chooses the best available encoder and uses either a parallel split
-    for hardware encoders or a two-pass contiguous pipeline for CPU.
+    for hardware encoders or a single-pass contiguous pipeline for CPU.
 
     Args:
         input_path: Path to the input video.
@@ -382,10 +335,10 @@ def compress_video(
             clean_log_file()
             return False, err
 
-    # Branch 2: CPU Fallback (Sequential Two-Pass Contiguous)
+    # Branch 2: CPU Fallback (Serial Single-Pass)
     else:
-        mode_str = "CPU two-pass"
-        ok, err = _encode_cpu_2pass(
+        mode_str = "CPU single-pass"
+        ok, err = _encode_cpu_single(
             ffmpeg_exe=ffmpeg_exe,
             input_path=input_path,
             output_path=output_path,

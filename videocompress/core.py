@@ -573,8 +573,12 @@ def build_single_pass_cmd(
     cmd: List[str] = [ffmpeg_exe, "-y"]
     filters: List[str] = []
 
-    if "vaapi" in encoder:
+    if "nvenc" in encoder:
+        cmd.extend(["-hwaccel", "cuda"])
+    elif "vaapi" in encoder:
         cmd.extend(["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"])
+    elif encoder not in ("libx265", "libx264"):
+        cmd.extend(["-hwaccel", "auto"])
 
     # Fast input seeking placed before -i
     if start is not None:
@@ -667,99 +671,3 @@ def build_single_pass_cmd(
     ])
     return cmd
 
-
-def build_cpu_pass_cmd(
-    ffmpeg_exe: str,
-    input_path: str,
-    encoder: str,
-    codec_type: str,
-    bitrate_k: int,
-    src_fps: float,
-    src_h: int,
-    pass_num: int,
-    pass_log_prefix: str,
-    output_path: str,
-    tgt_h: int,
-    tgt_fps: float,
-    audio_kbps: int = 128,
-) -> List[str]:
-    """Build a CPU two-pass FFmpeg command for libx264 / libx265.
-
-    Args:
-        ffmpeg_exe: Path to the ffmpeg executable.
-        input_path: Source video path.
-        encoder: FFmpeg encoder name ("libx264" or "libx265").
-        codec_type: "hevc" or "h264".
-        bitrate_k: Target bitrate in kbps.
-        src_fps: Source frames per second.
-        src_h: Source height in pixels.
-        pass_num: 1 for analysis pass, 2 for encoding pass.
-        pass_log_prefix: Path prefix for two-pass log files.
-        output_path: Destination video path.
-        tgt_h: Target height for scaling. Set to 0 or equal to src_h to skip.
-        tgt_fps: Target frames per second. Set equal to src_fps to skip.
-        audio_kbps: Probed audio bitrate in kbps.
-
-    Returns:
-        A command list ready for subprocess execution.
-    """
-    cmd: List[str] = [ffmpeg_exe, "-y", "-i", input_path]
-    filters: List[str] = []
-
-    if tgt_fps < src_fps:
-        filters.append(f"fps={tgt_fps}")
-
-    if tgt_h > 0 and tgt_h != src_h:
-        filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
-
-    if codec_type == "h264":
-        filters.append("format=yuv420p")
-
-    if filters:
-        cmd.extend(["-vf", ",".join(filters)])
-
-    cmd.extend(["-c:v", encoder, "-b:v", f"{bitrate_k}k"])
-
-    if encoder == "libx264":
-        cmd.extend(["-preset", "medium"])
-        if pass_num == 1:
-            cmd.extend(["-pass", "1", "-fastfirstpass", "1", "-passlogfile", pass_log_prefix])
-        else:
-            cmd.extend(["-pass", "2", "-passlogfile", pass_log_prefix])
-    elif encoder == "libx265":
-        cmd.extend(["-preset", "medium"])
-        stats_path = f"{pass_log_prefix}_x265.log".replace("\\", "/")
-        if pass_num == 1:
-            cmd.extend(["-x265-params", f"pass=1:stats={stats_path}:slow-firstpass=0:no-sao=1"])
-        else:
-            cmd.extend(["-x265-params", f"pass=2:stats={stats_path}:no-sao=1"])
-
-    if codec_type == "hevc":
-        cmd.extend(["-tag:v", "hvc1"])
-    elif codec_type == "h264":
-        cmd.extend(["-tag:v", "avc1"])
-
-    cmd.extend(["-maxrate:v", f"{bitrate_k}k", "-bufsize:v", f"{bitrate_k * 2}k"])
-    cmd.extend(["-map", "0:v:0"])
-
-    if pass_num == 1:
-        cmd.extend(["-an", "-loglevel", "error", "-progress", "pipe:2", "-nostats", "-f", "null", "-"])
-    else:
-        if audio_kbps == 0:
-            cmd.append("-an")
-        else:
-            cmd.extend(["-map", "0:a:0?"])
-            if audio_kbps > 160 and check_audio_encoder_available("aac"):
-                cmd.extend(["-c:a", "aac", "-b:a", "128k", "-ac", "2"])
-            else:
-                cmd.extend(["-c:a", "copy"])
-
-        cmd.extend([
-            "-movflags", "+faststart",
-            "-loglevel", "error",
-            "-progress", "pipe:2",
-            "-nostats",
-            output_path,
-        ])
-
-    return cmd
