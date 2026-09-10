@@ -3,9 +3,8 @@ Encoding orchestration and encoder-specific execution pipelines.
 
 Provides:
   - `compress_video`: Main orchestrator for video compression
-  - `_encode_nvenc_2pass`: Parallel 2-pass split pipeline (NVENC / Windows AMF)
-  - `_encode_hw_split`: Parallel split single-pass pipeline (VAAPI, QSV, VideoToolbox)
-  - `_encode_cpu_single`: Serial single-pass pipeline (CPU fallback: libx265, libx264)
+  - `_encode_hw_split`: Parallel split single-pass pipeline for hardware encoders
+  - `_encode_cpu_single`: Serial single-pass pipeline for CPU fallback (libx265, libx264)
 """
 
 import os
@@ -45,182 +44,35 @@ from videocompress.progress import (
 log = logging.getLogger(__name__)
 
 
-def _encode_nvenc_2pass(
-    ffmpeg_exe: str,
-    input_path: str,
-    output_path: str,
-    active_encoder: str,
-    codec_type: str,
-    target_size_mb: int,
-    duration: float,
-    split_time: float,
-    durs: Sequence[float],
-    audio_kbps: int,
-    fps: float,
-    src_h: int,
-    opt_h: int,
-    opt_fps: float,
-) -> Tuple[bool, str]:
-    """Execute parallel 2-pass split encoding (NVENC / Windows AMF).
-
-    Args:
-        ffmpeg_exe: Path to the ffmpeg executable.
-        input_path: Path to the input video.
-        output_path: Path to the output video.
-        active_encoder: FFmpeg encoder name.
-        codec_type: "hevc" or "h264".
-        target_size_mb: Target size in MB.
-        duration: Total video duration in seconds.
-        split_time: Split boundary in seconds.
-        durs: Durations for [part1, part2].
-        audio_kbps: Probed audio bitrate in kbps.
-        fps: Source FPS.
-        src_h: Source height.
-        opt_h: Optimized target height.
-        opt_fps: Optimized target FPS.
-
-    Returns:
-        Tuple of (success flag, error message).
-    """
-    brs = calculate_split_bitrates(target_size_mb, durs, audio_kbps)
-    pa: Optional[subprocess.Popen[str]] = None
-    pb: Optional[subprocess.Popen[str]] = None
-
-    with tempfile.TemporaryDirectory(prefix="vidcomp_", ignore_cleanup_errors=True) as temp_dir:
-        p1_path = os.path.join(temp_dir, "p1.mp4")
-        p2_path = os.path.join(temp_dir, "p2.mp4")
-        list_path = os.path.join(temp_dir, "list.txt")
-        log_a = os.path.join(temp_dir, "log_part1")
-        log_b = os.path.join(temp_dir, "log_part2")
-
-        try:
-            filters = []
-            if opt_fps < fps:
-                filters.append(f"fps={opt_fps}")
-            if opt_h < src_h:
-                filters.append(f"scale=-2:{opt_h}")
-
-            if "nvenc" in active_encoder:
-                if not filters:
-                    hw_accel = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
-                else:
-                    hw_accel = ["-hwaccel", "cuda"]
-                enc_params = ["-preset", "p5"]
-            else:
-                hw_accel = ["-hwaccel", "auto"]
-                enc_params = ["-usage", "transcoding", "-quality", "quality"]
-
-            base = [ffmpeg_exe] + hw_accel + ["-y", "-hide_banner", "-loglevel", "error", "-stats"]
-            vf_args = ["-vf", ",".join(filters)] if filters else []
-
-            # PASS 1: Analysis
-            console.print(Rule("[bold cyan]Analysis[/]", style="dim"))
-            console.print()
-            cmd_a1 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path, "-an"] + vf_args + ["-c:v", active_encoder] + enc_params + [
-                "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
-                "-pass", "1", "-passlogfile", log_a, "-f", "null", "-"
-            ]
-            cmd_b1 = base + ["-ss", str(split_time), "-i", input_path, "-an"] + vf_args + ["-c:v", active_encoder] + enc_params + [
-                "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
-                "-pass", "1", "-passlogfile", log_b, "-f", "null", "-"
-            ]
-
-            clean_env = get_clean_env()
-            pa = subprocess.Popen(cmd_a1, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
-            pb = subprocess.Popen(cmd_b1, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
-
-            ok1 = run_dual_progress(pa, pb, durs[0], durs[1], brs[0], brs[1], "Pass 1/2 - Analysis")
-            if not ok1:
-                return False, "Pass 1 Failed"
-            console.print("[bold green]  Pass 1 complete.[/]\n")
-
-            # PASS 2: Encoding
-            console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
-            console.print()
-            cmd_a2 = base + ["-ss", "0", "-to", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [
-                "-b:v", f"{brs[0]}k", "-maxrate:v", f"{brs[0]}k", "-bufsize:v", f"{brs[0]*2}k",
-                "-pass", "2", "-passlogfile", log_a
-            ]
-            cmd_b2 = base + ["-ss", str(split_time), "-i", input_path] + vf_args + ["-c:v", active_encoder] + enc_params + [
-                "-b:v", f"{brs[1]}k", "-maxrate:v", f"{brs[1]}k", "-bufsize:v", f"{brs[1]*2}k",
-                "-pass", "2", "-passlogfile", log_b
-            ]
-
-            if codec_type == "hevc":
-                cmd_a2.extend(["-tag:v", "hvc1"])
-                cmd_b2.extend(["-tag:v", "hvc1"])
-            elif codec_type == "h264":
-                cmd_a2.extend(["-tag:v", "avc1"])
-                cmd_b2.extend(["-tag:v", "avc1"])
-
-            cmd_a2.extend(["-c:a", "copy", str(p1_path)])
-            cmd_b2.extend(["-c:a", "copy", str(p2_path)])
-
-            pa = subprocess.Popen(cmd_a2, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
-            pb = subprocess.Popen(cmd_b2, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
-
-            ok2 = run_dual_progress(pa, pb, durs[0], durs[1], brs[0], brs[1], "Pass 2/2 - Encoding")
-            if not ok2:
-                return False, "Pass 2 Failed"
-            console.print("[bold green]  Pass 2 complete.[/]\n")
-
-            # Stitching
-            with console.status("[bold cyan]  Stitching segments...", spinner="dots"):
-                with open(list_path, "w", encoding="utf-8") as lf:
-                    lf.write(f"file '{p1_path}'\nfile '{p2_path}'")
-                subprocess.run(
-                    [ffmpeg_exe, "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", "-y", output_path],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    env=clean_env,
-                )
-            console.print()
-
-            return True, ""
-        except KeyboardInterrupt:
-            console.print("\n[bold red]Cancelling...[/]")
-            return False, "Cancelled by user"
-        except Exception as e:
-            return False, f"NVENC pass error: {e}"
-        finally:
-            for p in (pa, pb):
-                if p and p.poll() is None:
-                    try:
-                        p.kill()
-                        p.wait(timeout=1.0)
-                    except Exception:
-                        pass
-            clean_log_file()
-
-
 def _encode_hw_split(
     ffmpeg_exe: str,
     input_path: str,
     output_path: str,
     active_encoder: str,
     codec_type: str,
-    target_size_mb: int,
+    target_size_mb: float,
     split_time: float,
     durs: Tuple[float, float],
     audio_kbps: int,
     fps: float,
+    src_h: int,
     opt_h: int,
     opt_fps: float,
 ) -> Tuple[bool, str]:
-    """Execute parallel split single-pass encoding for hardware encoders (VAAPI, QSV, VideoToolbox).
+    """Execute parallel split single-pass encoding for hardware encoders.
 
     Args:
         ffmpeg_exe: Path to the ffmpeg executable.
         input_path: Source video path.
         output_path: Destination file path.
-        active_encoder: Active hardware encoder name (e.g., 'hevc_vaapi').
+        active_encoder: Active hardware encoder name (e.g., 'hevc_nvenc', 'hevc_amf').
         codec_type: "hevc" or "h264".
         target_size_mb: Total target size in megabytes.
         split_time: Timestamp in seconds marking the segment boundary.
         durs: Tuple of (first_segment_duration, second_segment_duration) in seconds.
         audio_kbps: Probed audio bitrate in kbps.
         fps: Source frames per second.
+        src_h: Source height in pixels.
         opt_h: Target height for scaling.
         opt_fps: Target frames per second.
 
@@ -238,20 +90,44 @@ def _encode_hw_split(
 
         try:
             cmd_a = build_single_pass_cmd(
-                ffmpeg_exe, input_path, active_encoder, codec_type, brs[0], fps, 0.0, float(split_time), p1_path, opt_h, opt_fps
+                ffmpeg_exe=ffmpeg_exe,
+                input_path=input_path,
+                encoder=active_encoder,
+                codec_type=codec_type,
+                bitrate_k=brs[0],
+                src_fps=fps,
+                src_h=src_h,
+                start=0.0,
+                end=float(split_time),
+                output_path=p1_path,
+                tgt_h=opt_h,
+                tgt_fps=opt_fps,
+                audio_kbps=audio_kbps,
             )
             cmd_b = build_single_pass_cmd(
-                ffmpeg_exe, input_path, active_encoder, codec_type, brs[1], fps, float(split_time), None, p2_path, opt_h, opt_fps
+                ffmpeg_exe=ffmpeg_exe,
+                input_path=input_path,
+                encoder=active_encoder,
+                codec_type=codec_type,
+                bitrate_k=brs[1],
+                src_fps=fps,
+                src_h=src_h,
+                start=float(split_time),
+                end=None,
+                output_path=p2_path,
+                tgt_h=opt_h,
+                tgt_fps=opt_fps,
+                audio_kbps=audio_kbps,
             )
 
             clean_env = get_clean_env()
-            pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
-            pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=0, env=clean_env)
+            pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=1, env=clean_env)
+            pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=1, env=clean_env)
 
             console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
             console.print()
             success = run_dual_progress(
-                pa, pb, durs[0], durs[1], brs[0], brs[1], "Split Single-Pass Encoding"
+                pa, pb, durs[0], durs[1], brs[0], brs[1], "Parallel Split Encoding"
             )
             console.print()
 
@@ -262,10 +138,13 @@ def _encode_hw_split(
                 with open(list_path, "w", encoding="utf-8") as lf:
                     lf.write(f"file '{p1_path}'\nfile '{p2_path}'")
                 subprocess.run(
-                    [ffmpeg_exe, "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", "-y", output_path],
+                    [
+                        ffmpeg_exe, "-f", "concat", "-safe", "0", "-i", list_path,
+                        "-c", "copy", "-movflags", "+faststart", "-y", output_path
+                    ],
                     check=True,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     env=clean_env,
                 )
             console.print()
@@ -273,7 +152,7 @@ def _encode_hw_split(
             return True, ""
         except KeyboardInterrupt:
             console.print("\n[bold red]Cancelling...[/]")
-            return False, "Cancelled by user"
+            raise
         except Exception as e:
             return False, f"Split single-pass error: {e}"
         finally:
@@ -292,10 +171,11 @@ def _encode_cpu_single(
     output_path: str,
     active_encoder: str,
     codec_type: str,
-    target_size_mb: int,
+    target_size_mb: float,
     duration: float,
     audio_kbps: int,
     fps: float,
+    src_h: int,
     opt_h: int,
     opt_fps: float,
 ) -> Tuple[bool, str]:
@@ -311,14 +191,22 @@ def _encode_cpu_single(
         duration: Total duration in seconds.
         audio_kbps: Probed audio bitrate in kbps.
         fps: Input frames per second.
+        src_h: Source height in pixels.
         opt_h: Target height for scaling.
         opt_fps: Target frames per second.
 
     Returns:
         Tuple of (success flag, error message).
+
+    Example:
+        >>> ok, err = _encode_cpu_single(
+        ...     "ffmpeg", "in.mp4", "out.mp4", "libx265", "hevc", 100.0, 120.0, 128, 60.0, 1080, 720, 30.0
+        ... )
     """
     bitrate_k = calculate_video_bitrate(float(target_size_mb), duration, audio_kbps)
+    clean_env = get_clean_env()
     process: Optional[subprocess.Popen[str]] = None
+
     try:
         cmd = build_single_pass_cmd(
             ffmpeg_exe=ffmpeg_exe,
@@ -327,55 +215,57 @@ def _encode_cpu_single(
             codec_type=codec_type,
             bitrate_k=bitrate_k,
             src_fps=fps,
+            src_h=src_h,
             start=None,
             end=None,
             output_path=output_path,
             tgt_h=opt_h,
             tgt_fps=opt_fps,
+            audio_kbps=audio_kbps,
         )
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
-            encoding="utf-8",
-            errors="ignore",
-            bufsize=0,
-            env=get_clean_env(),
+            bufsize=1,
+            env=clean_env,
         )
-
         console.print(Rule("[bold cyan]Encoding[/]", style="dim"))
         console.print()
         success = run_single_progress(process, duration, bitrate_k, pass_label="Pass 1/1 - Encoding")
         console.print()
-        return (True, "") if success else (False, "Encode Failed")
+        return (True, "") if success else (False, "CPU Encode Failed")
     except KeyboardInterrupt:
         console.print("\n[bold red]Cancelling...[/]")
         return False, "Cancelled by user"
     except Exception as e:
+        log.error(f"CPU single-pass encode error: {e}")
         return False, f"CPU encode error: {e}"
     finally:
         if process and process.poll() is None:
-            try: process.kill()
-            except Exception: pass
+            try:
+                process.kill()
+                process.wait(timeout=1.0)
+            except Exception:
+                pass
 
 
 def compress_video(
     input_path: str,
     output_path: Optional[str] = None,
-    target_size_mb: int = 100,
+    target_size_mb: float = 100.0,
     codec_type: str = "hevc",
 ) -> Tuple[bool, str]:
-    """Compress a video to an approximate target size.
+    """Compress a video to an approximate target size ceiling.
 
-    Chooses the best available encoder and uses either a parallel 2-pass split
-    (NVENC / Windows AMF), a split single-pass for other hardware encoders,
-    or a single unsplit pass for CPU (libx265 / libx264).
+    Chooses the best available encoder and uses either a parallel split
+    for hardware encoders or a single-pass contiguous pipeline for CPU.
 
     Args:
         input_path: Path to the input video.
-        output_path: Optional output path.
-        target_size_mb: Desired approximate size in megabytes.
+        output_path: Optional output path (defaults to .mp4 extension).
+        target_size_mb: Desired target size ceiling in megabytes.
         codec_type: "hevc" or "h264".
 
     Returns:
@@ -398,7 +288,10 @@ def compress_video(
 
     if output_path is None:
         input_p = Path(input_path)
-        output_path = str(input_p.with_name(f"{input_p.stem}_{target_size_mb}MB{input_p.suffix}"))
+        sz_str = f"{int(target_size_mb)}" if float(target_size_mb).is_integer() else f"{target_size_mb}"
+        output_path = str(input_p.with_name(f"{input_p.stem}_{sz_str}MB.mp4"))
+    elif not output_path.lower().endswith(".mp4"):
+        output_path = str(Path(output_path).with_suffix(".mp4"))
 
     # Decision Algorithm: Optimize Resolution and FPS
     opt_h, opt_fps = get_optimal_settings(target_size_mb, duration, src_w, src_h, fps)
@@ -415,41 +308,13 @@ def compress_video(
     show_encoder_detection(detection_results)
 
     split_info: Optional[str] = None
-    mode_str = "Single-pass"
 
-    # Branch 1: NVENC / AMF (Windows) Parallel 2-Pass
-    if "nvenc" in active_encoder or ("amf" in active_encoder and sys.platform == "win32"):
-        split_time = get_smart_split_point(input_path, duration)
-        durs = (split_time, duration - split_time)
-        split_info = f"{durs[0]:.1f}s + {durs[1]:.1f}s"
-        mode_str = "2-pass split"
-
-        ok, err = _encode_nvenc_2pass(
-            ffmpeg_exe=ffmpeg_exe,
-            input_path=input_path,
-            output_path=output_path,
-            active_encoder=active_encoder,
-            codec_type=codec_type,
-            target_size_mb=target_size_mb,
-            duration=duration,
-            split_time=split_time,
-            durs=durs,
-            audio_kbps=audio_kbps,
-            fps=fps,
-            src_h=src_h,
-            opt_h=opt_h,
-            opt_fps=opt_fps,
-        )
-        if not ok:
-            clean_log_file()
-            return False, err
-
-    # Branch 2: Split Single-Pass for Other HW Encoders (VAAPI, QSV, VideoToolbox, Linux AMF)
-    elif active_encoder not in ["libx265", "libx264"]:
+    # Branch 1: Hardware Encoders (Parallel Split Single-Pass)
+    if active_encoder not in ("libx265", "libx264"):
         split_time = get_smart_split_point(input_path, duration)
         durs_tuple = (split_time, duration - split_time)
         split_info = f"{durs_tuple[0]:.1f}s + {durs_tuple[1]:.1f}s"
-        mode_str = "split single-pass"
+        mode_str = "parallel split"
 
         ok, err = _encode_hw_split(
             ffmpeg_exe=ffmpeg_exe,
@@ -462,6 +327,7 @@ def compress_video(
             durs=durs_tuple,
             audio_kbps=audio_kbps,
             fps=fps,
+            src_h=src_h,
             opt_h=opt_h,
             opt_fps=opt_fps,
         )
@@ -469,7 +335,7 @@ def compress_video(
             clean_log_file()
             return False, err
 
-    # Branch 3: Serial Single-Pass CPU Fallback (libx265 / libx264)
+    # Branch 2: CPU Fallback (Serial Single-Pass)
     else:
         mode_str = "CPU single-pass"
         ok, err = _encode_cpu_single(
@@ -482,6 +348,7 @@ def compress_video(
             duration=duration,
             audio_kbps=audio_kbps,
             fps=fps,
+            src_h=src_h,
             opt_h=opt_h,
             opt_fps=opt_fps,
         )
@@ -506,7 +373,8 @@ def compress_video(
             split_info=split_info,
             quality_info=quality_info,
         )
-        show_exit_countdown(3)
+        if sys.stdout.isatty():
+            show_exit_countdown(3)
         return True, output_path
 
     return False, "Output missing"
