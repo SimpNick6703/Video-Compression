@@ -24,7 +24,7 @@ from pathlib import Path
 import concurrent.futures
 
 # --- Configuration ---
-PRESET_SIZES = [20, 50, 100, 500]
+PRESET_SIZES = [20, 50, 100, 1024]
 PRESET_CODECS = ["hevc", "h264"]
 SOURCE_PACKAGE = "videocompress"
 FFMPEG_BINARIES = ["ffmpeg", "ffprobe"]
