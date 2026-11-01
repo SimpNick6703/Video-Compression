@@ -1,12 +1,25 @@
 # Video-Compression
-**Discord compliant file size limit video compression:**
-Discord has too small file size limit for free. And, any online video compressor as cloud service or standalone installer ones have either file upload limit or too many options to configure and we never know what's the optimal configuration to go with.
 
-A normal user isn't curious about these configuration and just want a _targeted file size_ video compression with minimal quality loss.
+[![GitHub Release](https://img.shields.io/github/v/release/SimpNick6703/Video-Compression?style=flat-square&color=06b6d4)](https://github.com/SimpNick6703/Video-Compression/releases)
+[![Downloads](https://img.shields.io/github/downloads/SimpNick6703/Video-Compression/total?style=flat-square&color=8b5cf6)](https://github.com/SimpNick6703/Video-Compression/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=flat-square)](LICENSE)
+[![Platform Support](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-emerald?style=flat-square)](#requirements)
+[![Architecture Explorer](https://img.shields.io/badge/Architecture-Interactive%20Explorer-cyan?style=flat-square&logo=googlechrome&logoColor=white)](https://simpnick6703.github.io/Video-Compression/)
 
-So, here's a simple drag and drop usage (In Windows) easy solution.
+**Video-Compression** is a high-performance **Discord video compressor** and **zero-config drag-and-drop FFmpeg wrapper** engineered specifically for deterministic **target file size video compression**. Whether compressing gaming clips, screen recordings, or camera footage to meet Discord upload limits—**20MB**, **50MB**, **100MB**, or **1024MB**—the engine automatically balances optimal Bits-Per-Pixel (BPP) rate control, resolution scaling, and parallel keyframe split encoding.
+
+Powered by hardware acceleration with zero-copy pipelines where available:
+- **NVIDIA GPU**: **NVENC scale_cuda** (pure on-chip VRAM resident scaling & encoding)
+- **AMD GPU**: **AMD AMF** (`hevc_amf`, `h264_amf`)
+- **Intel GPU**: **Intel QSV** (`hevc_qsv`, `h264_qsv`)
+- **Linux (AMD/Intel)**: **VA-API** (`hevc_vaapi`, `h264_vaapi`)
+- **macOS (Apple Silicon & Intel)**: **Apple VideoToolbox** (`hevc_videotoolbox`, `h264_videotoolbox`)
+- **Software Fallback**: Multithreaded CPU encoding (`libx265`, `libx264`)
+
+https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669
+
 > [!TIP]
-> Visit [this page](https://simpnick6703.github.io/Video-Compression) for Architectural overview and more.
+> Visit the [Interactive Architecture Explorer](https://simpnick6703.github.io/Video-Compression/) to inspect the multi-worker parallel pipeline, zero-copy VRAM dataflow, and live Bits-Per-Pixel (BPP) logic calculator.
 
 ### Discord Preset Tiers
 
@@ -31,12 +44,8 @@ For using prebuilt binaries from releases, you just need to download the executa
 
 ## How to use
 - In Windows:
-  - Download any of the target filesize build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
-  - Drag and drop your video on the executable. (Or run in Command Prompt/Terminal as `./{size}mb-{codec}-win64.exe <input.mp4> [output.mp4]`)
-
-
-
-https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669
+  - Download any of the target filesize builds from [releases](https://github.com/SimpNick6703/Video-Compression/releases).
+  - Drag and drop your video directly onto the executable (e.g., `100mb-hevc-win64.exe`). (Or run from terminal as `./{size}mb-{codec}-win64.exe <input.mp4> [output.mp4]`).
 
 
 
