@@ -137,3 +137,10 @@ Considering the wide variety of hardware configurations, the script uses a fallb
 > All hardware encoders (NVENC, AMF, VAAPI, QSV, VideoToolbox) use parallel split single-pass encoding with hardware rate control (including on-chip lookahead and adaptive quantization). Software fallback (libx265 / libx264) uses a contiguous single-pass pipeline.
 > If your dedicated GPU is being bypassed in favor of integrated GPU or CPU encoding, you'll need to manually change the priority logic in the script to suit your hardware setup. Or, you may simply remove unwanted encoders from the priority list in the script, build the executable again, and use that custom build.
 
+## License
+
+This project and its prebuilt standalone executables (which bundle static `ffmpeg` and `ffprobe` binaries from [SimpNick6703/ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)) are distributed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
+
+See the [LICENSE](LICENSE) file for the full license text.
+
+

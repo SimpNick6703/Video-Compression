@@ -217,8 +217,107 @@ except KeyboardInterrupt:
     return script_path
 
 
+def parse_version_tuple(version_str: str) -> tuple[int, int, int, int]:
+    """Parse a version string into a 4-tuple of integers.
+
+    Args:
+        version_str: Raw version string (e.g. 'v1.2.0', '1.2.0.0').
+
+    Returns:
+        A 4-tuple of integers (major, minor, patch, build).
+
+    Example:
+        >>> parse_version_tuple('v1.2.0')
+        (1, 2, 0, 0)
+    """
+    clean_version = version_str.lstrip("vV").strip()
+    if not clean_version:
+        clean_version = "1.2.0.0"
+    parts: list[int] = []
+    for segment in clean_version.split("."):
+        match = re.match(r"^(\d+)", segment)
+        parts.append(int(match.group(1)) if match else 0)
+    while len(parts) < 4:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2], parts[3])
+
+
+def create_windows_version_file(version_str: str, output_name: str, target_mb: int, codec: str, dest_dir: str) -> str:
+    """Generate a PyInstaller VSVersionInfo text file for Windows PE metadata.
+
+    Args:
+        version_str: Version string (e.g. '1.2.0.0').
+        output_name: Base filename identifier of the executable.
+        target_mb: Target size preset in megabytes.
+        codec: Encoding codec ('hevc' or 'h264').
+        dest_dir: Destination directory where the version file will be saved.
+
+    Returns:
+        The file path to the generated version information file.
+
+    Example:
+        >>> path = create_windows_version_file('1.2.0.0', '100mb-hevc-win64', 100, 'hevc', '/tmp')
+        >>> os.path.exists(path)
+        True
+    """
+    version_tuple = parse_version_tuple(version_str)
+    file_description = f"Video-Compression {target_mb}MB ({codec.upper()}) Preset"
+
+    content = f'''# UTF-8
+#
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={version_tuple},
+    prodvers={version_tuple},
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904b0',
+          [
+            StringStruct('CompanyName', 'SimpNick6703'),
+            StringStruct('FileDescription', '{file_description}'),
+            StringStruct('FileVersion', '{version_str}'),
+            StringStruct('InternalName', '{output_name}'),
+            StringStruct('LegalCopyright', 'Copyright (c) 2026 SimpNick6703. Licensed under GPL-3.0.'),
+            StringStruct('OriginalFilename', '{output_name}.exe'),
+            StringStruct('ProductName', 'Video-Compression'),
+            StringStruct('ProductVersion', '{version_str}')
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+'''
+    version_file_path = os.path.join(dest_dir, f"{output_name}_version.txt")
+    with open(version_file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return version_file_path
+
+
 def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str, config_dir: str) -> bool:
-    """Build a single executable using PyInstaller with isolation."""
+    """Build a single executable using PyInstaller with isolation.
+
+    Args:
+        script_path: Path to the target Python script wrapper.
+        target_mb: Target size preset in megabytes.
+        codec: Encoding codec ('hevc' or 'h264').
+        work_dir: PyInstaller work directory.
+        config_dir: PyInstaller config directory for cache isolation.
+
+    Returns:
+        True if the build succeeded, False otherwise.
+    """
     platform_suffix = get_platform_suffix()
     
     version = os.environ.get("BUILD_VERSION")
@@ -243,6 +342,21 @@ def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str
             log.info("  Bundling %s (from %s)", binary, binary_path)
         except FileNotFoundError as e:
             log.warning("  %s", e)
+
+    extra_args = []
+    if sys.platform == "win32":
+        raw_version = os.environ.get("BUILD_VERSION", "1.2.0.0")
+        clean_version = raw_version.lstrip("vV").strip() if raw_version else "1.2.0.0"
+        if not clean_version:
+            clean_version = "1.2.0.0"
+        version_file_path = create_windows_version_file(
+            version_str=clean_version,
+            output_name=output_name,
+            target_mb=target_mb,
+            codec=codec,
+            dest_dir=work_dir,
+        )
+        extra_args.append(f"--version-file={version_file_path}")
     
     repo_root = str(Path(".").resolve())
     cmd = [
@@ -255,7 +369,7 @@ def build_executable(script_path: str, target_mb: int, codec: str, work_dir: str
         f"--distpath={OUTPUT_DIR}",
         "--clean",
         "--noconfirm",
-    ] + add_binary_args + [script_path]
+    ] + add_binary_args + extra_args + [script_path]
     
     # Isolate PyInstaller's global metadata/bincache to avoid race conditions
     env = os.environ.copy()
