@@ -8,6 +8,15 @@ So, here's a simple drag and drop usage (In Windows) easy solution.
 > [!TIP]
 > Visit [this page](https://simpnick6703.github.io/Video-Compression) for Architectural overview and more.
 
+### Discord Preset Tiers
+
+| Preset Size | Discord Upload Limit & Tier |
+|:---|:---|
+| `20 MB` | Discord Free-Tier / Server Level 1 Boosts (DMs, Group DMs, and Servers below Level 2) |
+| `50 MB` | Discord Server Level 2 Boosts / Basic Nitro Users |
+| `100 MB` | Discord Server Level 3 Boosts |
+| `1024 MB` | Discord $10 Nitro Users (1 GB limit) |
+
 ## Requirements
 For running the script locally (your own build):
 - Python 3.x
@@ -63,7 +72,7 @@ python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--
 |:---|:---|:---|:---|:---|
 | `<input.mp4>` | `string` (Path) | **Yes** | — | Path to the source video file. Must exist on disk. |
 | `[output.mp4]` | `string` (Path) | No | `<input>_<size>MB.mp4` | Destination path for the compressed video. |
-| `[target_size_in_mb]` | `number` | No | `100` | Target file size threshold in megabytes (e.g. `20`, `50`, `100`, `8.5`, `500`). |
+| `[target_size_in_mb]` | `number` | No | `100` | Target file size threshold in megabytes (e.g. `20`, `50`, `100`, `1024`). Maps directly to Discord tiers: `20` MB (Free/Server Lvl 1), `50` MB (Server Lvl 2/Nitro Basic), `100` MB (Server Lvl 3), and `1024` MB ($10 Nitro). |
 | `[codec]` | `string` | No | `hevc` | Encoding codec: `hevc` (H.265, higher efficiency) or `h264` (H.264, broader compatibility). |
 | `--verbose`, `-v` | `flag` | No | `False` | Enables detailed debug logs and FFmpeg probe output. |
 
@@ -84,8 +93,8 @@ python videocompress input.mp4 50
 # Compress to 20 MB using H.264
 python videocompress input.mp4 20 h264
 
-# Custom output destination with 500 MB limit (module invocation)
-python -m videocompress input.mp4 compressed_output.mp4 500 hevc
+# Custom output destination with 1024 MB limit (module invocation)
+python -m videocompress input.mp4 compressed_output.mp4 1024 hevc
 
 # Enable debug logs
 python videocompress input.mp4 100 hevc --verbose
@@ -106,7 +115,7 @@ python build.py
 
 This will:
 1. Automatically download minimal FFmpeg/FFprobe binaries for your platform from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) to the root directory (skipped if already present)
-2. Generate all preset executables (20mb, 50mb, 100mb, 500mb for both HEVC and H.264 codecs) in `dist/`
+2. Generate all preset executables (20mb, 50mb, 100mb, 1024mb for both HEVC and H.264 codecs) in `dist/`
 3. Clean up build artifacts (spec files and build cache)
 
 To keep build artifacts for debugging:

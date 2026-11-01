@@ -98,23 +98,23 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-12 text-left">
                         <div class="glass-panel p-5 rounded-lg border-l-4 border-cyan-500 hover:border-cyan-400 transition-all shadow-lg group">
                             <div class="text-2xl font-bold text-white font-mono mb-1">20MB</div>
-                            <div class="text-xs font-bold text-cyan-400 uppercase tracking-wide mb-2">Free Tier Users</div>
-                            <p class="text-xs text-slate-400 leading-tight">Discord DMs, Group DMs, and Servers with less than Level 2 boosts.</p>
+                            <div class="text-xs font-bold text-cyan-400 uppercase tracking-wide mb-2">Free Tier &amp; Server Lvl 1</div>
+                            <p class="text-xs text-slate-400 leading-tight">Discord Free-Tier users, DMs, Group DMs, and Server Level 1 Boosts.</p>
                         </div>
                         <div class="glass-panel p-5 rounded-lg border-l-4 border-violet-500 hover:border-violet-400 transition-all shadow-lg group">
                             <div class="text-2xl font-bold text-white font-mono mb-1">50MB</div>
-                            <div class="text-xs font-bold text-violet-400 uppercase tracking-wide mb-2">Server Lvl 2</div>
-                            <p class="text-xs text-slate-400 leading-tight">Optimized for Discord Server Level 2 Boost environments.</p>
+                            <div class="text-xs font-bold text-violet-400 uppercase tracking-wide mb-2">Server Lvl 2 &amp; Basic Nitro</div>
+                            <p class="text-xs text-slate-400 leading-tight">Optimized for Discord Server Level 2 Boosts and Basic Nitro users.</p>
                         </div>
                         <div class="glass-panel p-5 rounded-lg border-l-4 border-fuchsia-500 hover:border-fuchsia-400 transition-all shadow-lg group">
                             <div class="text-2xl font-bold text-white font-mono mb-1">100MB</div>
-                            <div class="text-xs font-bold text-fuchsia-400 uppercase tracking-wide mb-2">Server Lvl 3</div>
-                            <p class="text-xs text-slate-400 leading-tight">Maximized for Discord Server Level 3 Boost limits.</p>
+                            <div class="text-xs font-bold text-fuchsia-400 uppercase tracking-wide mb-2">Server Lvl 3 Boosts</div>
+                            <p class="text-xs text-slate-400 leading-tight">Maximized for Discord Server Level 3 Boost upload limits.</p>
                         </div>
                         <div class="glass-panel p-5 rounded-lg border-l-4 border-emerald-500 hover:border-emerald-400 transition-all shadow-lg group">
                             <div class="text-2xl font-bold text-white font-mono mb-1">1024MB</div>
-                            <div class="text-xs font-bold text-emerald-400 uppercase tracking-wide mb-2">Nitro Users</div>
-                            <p class="text-xs text-slate-400 leading-tight">Designed for the expanded limits of Discord Nitro subscribers.</p>
+                            <div class="text-xs font-bold text-emerald-400 uppercase tracking-wide mb-2">$10 Nitro Users</div>
+                            <p class="text-xs text-slate-400 leading-tight">Designed for the 1 GB (1024 MB) upload limit of $10 Discord Nitro subscribers.</p>
                         </div>
                     </div>
                 </div>
@@ -445,8 +445,8 @@
                         <div class="text-xs sm:text-sm text-slate-400 mt-1">~545 MB Total PCIe</div>
                     </button>
                     <button data-mode="downscaled" class="df-mode-btn text-left p-3.5 border border-slate-800 bg-slate-950 font-mono transition-all hover:border-amber-400">
-                        <div class="text-xs text-amber-400 uppercase tracking-wider font-bold">02 // DOWNSCALE 720P</div>
-                        <div class="text-base sm:text-lg font-bold text-white mt-1">Hybrid CPU Scale</div>
+                        <div class="text-xs text-amber-400 uppercase tracking-wider font-bold">02 // LEGACY HYBRID</div>
+                        <div class="text-base sm:text-lg font-bold text-white mt-1">CPU SWScale Roundtrip</div>
                         <div class="text-xs sm:text-sm text-slate-400 mt-1">~64.4 GB PCIe Traffic</div>
                     </button>
                     <button data-mode="cpu" class="df-mode-btn text-left p-3.5 border border-slate-800 bg-slate-950 font-mono transition-all hover:border-violet-400">
@@ -455,8 +455,8 @@
                         <div class="text-xs sm:text-sm text-slate-400 mt-1">0 MB PCIe (Host Bound)</div>
                     </button>
                     <button data-mode="zerocopy" class="df-mode-btn text-left p-3.5 border border-slate-800 bg-slate-950 font-mono transition-all hover:border-emerald-400">
-                        <div class="text-xs text-emerald-400 uppercase tracking-wider font-bold">04 // ZERO-COPY</div>
-                        <div class="text-base sm:text-lg font-bold text-white mt-1">scale_cuda Target</div>
+                        <div class="text-xs text-emerald-400 uppercase tracking-wider font-bold">04 // CURRENT IMPLEMENTATION</div>
+                        <div class="text-base sm:text-lg font-bold text-white mt-1">Zero-Copy scale_cuda</div>
                         <div class="text-xs sm:text-sm text-slate-400 mt-1">~545 MB (VRAM Resized)</div>
                     </button>
                 </div>
@@ -623,7 +623,7 @@
                             // ARCHITECTURAL IMPLICATION
                         </div>
                         <p class="text-slate-300 text-sm sm:text-base leading-relaxed font-sans">
-                            When downscaling is triggered by the BPP calculator (e.g. 1080p to 720p), keeping the filter on the CPU causes a massive 64 GB PCIe roundtrip. Transitioning to <span class="text-emerald-400 font-bold font-mono">scale_cuda</span> allows the GPU to resize frames in VRAM, recovering native 545 MB PCIe efficiency while preserving quality.
+                            When downscaling is triggered by the BPP calculator (e.g. 1080p to 720p), keeping the filter on the CPU causes a massive 64 GB PCIe roundtrip in legacy hybrid pipelines. The current zero-copy implementation using <span class="text-emerald-400 font-bold font-mono">scale_cuda</span> allows the GPU to resize frames directly in VRAM, recovering native 545 MB PCIe efficiency while preserving quality.
                         </p>
                     </div>
 
@@ -650,11 +650,11 @@
                         <button data-schematic="path1" class="schematic-btn px-3 py-1.5 font-bold transition-all text-slate-400 hover:text-purple-400">
                             Path 1 // CPU Decode (~19.7 GB)
                         </button>
-                        <button data-schematic="path2" class="schematic-btn schematic-btn-active px-3 py-1.5 font-bold transition-all text-amber-400">
-                            Path 2 // Current Hybrid (~64.4 GB)
+                        <button data-schematic="path2" class="schematic-btn px-3 py-1.5 font-bold transition-all text-slate-400 hover:text-amber-400">
+                            Path 2 // Legacy Hybrid (~64.4 GB)
                         </button>
-                        <button data-schematic="path3" class="schematic-btn px-3 py-1.5 font-bold transition-all text-slate-400 hover:text-emerald-400">
-                            Path 3 // Zero-Copy scale_cuda (~545 MB)
+                        <button data-schematic="path3" class="schematic-btn schematic-btn-active px-3 py-1.5 font-bold transition-all text-emerald-400">
+                            Path 3 // Current Zero-Copy scale_cuda (~545 MB)
                         </button>
                         <button data-schematic="compare" class="schematic-btn px-3 py-1.5 font-bold transition-all text-slate-400 hover:text-cyan-400">
                             Side-by-Side (2 vs 3)
@@ -666,7 +666,7 @@
                     <!-- Informative context banner -->
                     <div class="p-4 bg-slate-900/60 border border-slate-800 text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
                         <span class="font-mono text-cyan-400 font-bold">Physical Routing Analysis:</span>
-                        In Native 1080p, frames remain in GPU VRAM. However, when downscaling (e.g. 1080p to 720p), the filtergraph execution location dictates PCIe bandwidth. Below is the physical diagrammatic comparison across the architectural iterations: <span class="font-mono text-purple-400 font-bold">Path 1</span> (CPU decode bottleneck), <span class="font-mono text-amber-400 font-bold">Path 2</span> (current NVDEC + CPU scale), and <span class="font-mono text-emerald-400 font-bold">Path 3</span> (<span class="font-mono text-emerald-400 font-bold">scale_cuda</span> zero-copy potential).
+                        In Native 1080p, frames remain in GPU VRAM. However, when downscaling (e.g. 1080p to 720p), the filtergraph execution location dictates PCIe bandwidth. Below is the physical diagrammatic comparison across the architectural iterations: <span class="font-mono text-purple-400 font-bold">Path 1</span> (CPU decode bottleneck), <span class="font-mono text-amber-400 font-bold">Path 2</span> (legacy v1.1.6 hybrid NVDEC + CPU scale), and <span class="font-mono text-emerald-400 font-bold">Path 3</span> (current <span class="font-mono text-emerald-400 font-bold">scale_cuda</span> zero-copy implementation).
                     </div>
 
                     <!-- Schematics Container -->
@@ -786,15 +786,15 @@
                             </div>
                         </div>
 
-                        <!-- SCHEMATIC CARD 2: PATH 2 - CURRENT HYBRID DOWNSCALE -->
-                        <div id="schematic-card-path2" class="border border-slate-800 bg-slate-950 p-5 sm:p-6 space-y-5">
+                        <!-- SCHEMATIC CARD 2: PATH 2 - LEGACY HYBRID DOWNSCALE -->
+                        <div id="schematic-card-path2" class="border border-slate-800 bg-slate-950 p-5 sm:p-6 space-y-5 hidden">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
                                 <div>
                                     <div class="font-mono text-xs text-amber-400 font-bold uppercase tracking-wider">
-                                        CURRENT IMPLEMENTATION // SINGLE-PASS DUAL WORKER
+                                        LEGACY v1.1.6 HYBRID // CPU SWSCALE ROUNDTRIP
                                     </div>
                                     <h4 class="text-base sm:text-lg font-bold text-white font-mono mt-0.5">
-                                        Path 2: Current Hybrid Downscale Pipeline (NVDEC Decode + CPU Lanczos Scaling)
+                                        Path 2: Legacy Hybrid Downscale Pipeline (NVDEC Decode + CPU Lanczos Scaling)
                                     </h4>
                                 </div>
                                 <span class="font-mono text-xs font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-3 py-1 self-start sm:self-auto">
@@ -920,7 +920,7 @@
                                         </div>
                                     </div>
                                     <div class="pt-2 border-t border-slate-800 text-xs text-slate-400">
-                                        Limitation: Lacks scale_cuda filter to keep frames in VRAM
+                                        Legacy: Lacks scale_cuda filter to keep frames in VRAM
                                     </div>
                                 </div>
 
@@ -928,19 +928,19 @@
 
                             <div class="p-3 bg-slate-900/60 border border-slate-800 text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
                                 <span class="text-amber-400 font-bold font-mono">Architectural Tradeoff:</span>
-                                Offloading decoding to NVDEC completely eliminated the 91% CPU decode bottleneck from intermediate v1.1.6-pre (Path 1). However, because scaling is performed in CPU software, the 44.22 GB decoded stream and 19.65 GB scaled stream must still ping-pong across PCIe.
+                                Offloading decoding to NVDEC completely eliminated the 91% CPU decode bottleneck from intermediate v1.1.6-pre (Path 1). However, because scaling was performed in CPU software, the 44.22 GB decoded stream and 19.65 GB scaled stream ping-ponged across PCIe in the legacy v1.1.6 hybrid architecture.
                             </div>
                         </div>
 
-                        <!-- SCHEMATIC CARD 3: PATH 3 - ZERO-COPY SCALE_CUDA POTENTIAL -->
-                        <div id="schematic-card-path3" class="border border-slate-800 bg-slate-950 p-5 sm:p-6 space-y-5 hidden">
+                        <!-- SCHEMATIC CARD 3: PATH 3 - ZERO-COPY SCALE_CUDA -->
+                        <div id="schematic-card-path3" class="border border-slate-800 bg-slate-950 p-5 sm:p-6 space-y-5">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
                                 <div>
                                     <div class="font-mono text-xs text-emerald-400 font-bold uppercase tracking-wider">
-                                        FUTURE ARCHITECTURE // 100% VRAM RESIDENT PIPELINE
+                                        CURRENT IMPLEMENTATION // 100% VRAM RESIDENT PIPELINE
                                     </div>
                                     <h4 class="text-base sm:text-lg font-bold text-white font-mono mt-0.5">
-                                        Path 3: True Zero-Copy Pipeline (scale_cuda On-Chip GPU Scaling)
+                                        Path 3: Active Zero-Copy Pipeline (scale_cuda On-Chip GPU Scaling)
                                     </h4>
                                 </div>
                                 <span class="font-mono text-xs font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1 self-start sm:self-auto">
@@ -1059,8 +1059,8 @@
                             </div>
 
                             <div class="p-3 bg-slate-900/60 border border-slate-800 text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
-                                <span class="text-emerald-400 font-bold font-mono">Future Optimization Vector:</span>
-                                Specifying <span class="font-mono text-emerald-300 font-bold">-hwaccel_output_format cuda</span> combined with <span class="font-mono text-emerald-300 font-bold">-vf scale_cuda=-2:720:interp_algo=lanczos</span> keeps decoded surfaces entirely in VRAM. This unlocks full zero-copy execution on NVIDIA silicon, matching the native 1080p efficiency while completing downscaling at maximum ASIC throughput.
+                                <span class="text-emerald-400 font-bold font-mono">Current Implementation:</span>
+                                Specifying <span class="font-mono text-emerald-300 font-bold">-hwaccel cuda -hwaccel_output_format cuda</span> combined with <span class="font-mono text-emerald-300 font-bold">-vf hwupload_cuda,scale_cuda=-2:720:interp_algo=lanczos</span> keeps decoded surfaces entirely in VRAM. This unlocks full zero-copy execution on NVIDIA silicon, matching the native 1080p efficiency while completing downscaling at maximum ASIC throughput.
                             </div>
                         </div>
                     </div>
@@ -1092,8 +1092,8 @@
                                     <th class="p-3.5 sm:p-4 text-slate-300">Metric</th>
                                     <th class="p-3.5 sm:p-4 text-rose-400">v1.1.5 (Downscaled)</th>
                                     <th class="p-3.5 sm:p-4 text-purple-400">Intermediate v1.1.6-pre</th>
-                                    <th class="p-3.5 sm:p-4 text-amber-400">Current Implementation</th>
-                                    <th class="p-3.5 sm:p-4 text-emerald-400 bg-emerald-950/20 border-l border-r border-emerald-500/30">Potential scale_cuda</th>
+                                    <th class="p-3.5 sm:p-4 text-amber-400">Legacy v1.1.6 Hybrid</th>
+                                    <th class="p-3.5 sm:p-4 text-emerald-400 bg-emerald-950/20 border-l border-r border-emerald-500/30">Current Implementation (scale_cuda)</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-800/60 text-slate-300">
@@ -1166,7 +1166,7 @@
 
                     <div class="p-4 bg-slate-900/60 border border-slate-800 text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
                         <span class="font-mono text-cyan-400 font-bold">Architectural Takeaway:</span>
-                        Current single-pass hybrid (<span class="text-amber-400 font-mono font-bold">Path 2</span>) delivers a 49.6% PCIe reduction and cuts wall-clock encoding from 37.8s down to 22.4s by eliminating Pass 1 and using NVDEC. Transitioning to zero-copy <span class="text-emerald-400 font-mono font-bold">scale_cuda</span> (<span class="text-emerald-400 font-mono font-bold">Path 3</span>) unlocks an additional 99.1% PCIe reduction down to 545 MB, freeing host CPU/RAM completely.
+                        Legacy single-pass hybrid (<span class="text-amber-400 font-mono font-bold">Path 2</span>) delivered a 49.6% PCIe reduction and cut wall-clock encoding from 37.8s down to 22.4s by eliminating Pass 1 and using NVDEC. The active zero-copy <span class="text-emerald-400 font-mono font-bold">scale_cuda</span> pipeline (<span class="text-emerald-400 font-mono font-bold">Path 3</span>) with <span class="font-mono text-emerald-300 font-bold">-hwaccel cuda -hwaccel_output_format cuda</span> and <span class="font-mono text-emerald-300 font-bold">hwupload_cuda,scale_cuda=-2:720:interp_algo=lanczos</span> unlocks an additional 99.1% PCIe reduction down to 545 MB, freeing host CPU/RAM completely.
                     </div>
                 </div>
             </div>

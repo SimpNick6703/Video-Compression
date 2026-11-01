@@ -569,12 +569,17 @@ def build_single_pass_cmd(
 
     Returns:
         A command list ready for subprocess execution.
+
+    Examples:
+        >>> cmd = build_single_pass_cmd("ffmpeg", "in.mp4", "hevc_nvenc", "hevc", 2000, 60.0, 1080, None, None, "out.mp4", 720, 60.0)
+        >>> "-hwaccel_output_format" in cmd
+        True
     """
     cmd: List[str] = [ffmpeg_exe, "-y"]
     filters: List[str] = []
 
     if "nvenc" in encoder:
-        cmd.extend(["-hwaccel", "cuda"])
+        cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"])
     elif "vaapi" in encoder:
         cmd.extend(["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"])
     elif encoder not in ("libx265", "libx264"):
@@ -592,21 +597,32 @@ def build_single_pass_cmd(
         cmd.extend(["-avoid_negative_ts", "make_zero"])
 
     # Build Filters
-    if tgt_fps < src_fps:
-        filters.append(f"fps={tgt_fps}")
-
-    # Scale filter: only apply if target height differs from source
-    if tgt_h > 0 and tgt_h != src_h:
-        filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
-
-    # Format normalization & hardware surface handling
-    if "vaapi" in encoder:
+    if "nvenc" in encoder:
+        if tgt_fps < src_fps:
+            filters.append(f"fps={tgt_fps}")
+        pix_fmt = "yuv420p" if codec_type == "h264" else "nv12"
+        if tgt_h > 0 and tgt_h != src_h:
+            filters.append("hwupload_cuda")
+            filters.append(f"scale_cuda=-2:{tgt_h}:interp_algo=lanczos:format={pix_fmt}")
+        elif codec_type == "h264":
+            filters.append("hwupload_cuda")
+            filters.append("scale_cuda=format=yuv420p")
+        if filters:
+            cmd.extend(["-vf", ",".join(filters)])
+    elif "vaapi" in encoder:
+        if tgt_fps < src_fps:
+            filters.append(f"fps={tgt_fps}")
+        if tgt_h > 0 and tgt_h != src_h:
+            filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
         filters.append("format=nv12,hwupload")
         cmd.extend(["-vf", ",".join(filters)])
-    elif codec_type == "h264":
-        filters.append("format=yuv420p")
-        cmd.extend(["-vf", ",".join(filters)])
     else:
+        if tgt_fps < src_fps:
+            filters.append(f"fps={tgt_fps}")
+        if tgt_h > 0 and tgt_h != src_h:
+            filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
+        if codec_type == "h264":
+            filters.append("format=yuv420p")
         if filters:
             cmd.extend(["-vf", ",".join(filters)])
 

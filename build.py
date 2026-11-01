@@ -2,7 +2,7 @@
 """
 Build script for Video-Compression executables.
 
-Generates preset executables (20mb, 50mb, 100mb, 500mb) from videocompress.py
+Generates preset executables (20mb, 50mb, 100mb, 1024mb) from the videocompress package
 by creating temporary copies with hardcoded target sizes, then compiling with PyInstaller.
 
 Usage:

@@ -227,11 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
             nodes: { storage: true, host: true, pcie: true, gpu: true }
         },
         downscaled: {
-            title: "Hardware Downscaled (720p60 Hybrid)",
+            title: "Hardware Downscaled (Legacy 720p60 Hybrid)",
             badge: "PCIe Roundtrip Path",
             badgeClass: "bg-amber-900/40 text-amber-400 border-amber-500/40",
-            note: "Decoded on NVDEC, downloaded to Host RAM for CPU Lanczos scaling, and uploaded back to NVENC.",
-            summary: "NVDEC decompresses 1080p frames in VRAM. Because standard scale is a CPU software filter (libswscale), FFmpeg automatically downloads decoded frames across PCIe to Host System RAM (~44 GB D2H). The CPU runs Lanczos scaling on the host, and uploads 720p frames across PCIe back to NVENC (~19 GB H2D) for encoding.",
+            note: "Legacy v1.1.6 hybrid pipeline: decoded on NVDEC, downloaded to Host RAM for CPU Lanczos scaling, and uploaded back to NVENC.",
+            summary: "Legacy v1.1.6 hybrid pipeline (CPU swscale roundtrip): NVDEC decompresses 1080p frames in VRAM. Because standard scale is a CPU software filter (libswscale), FFmpeg automatically downloads decoded frames across PCIe to Host System RAM (~44 GB D2H). The CPU runs Lanczos scaling on the host, and uploads 720p frames across PCIe back to NVENC (~19 GB H2D) for encoding.",
             pcie: "~64.4 GB Total",
             pcieSub: "44.2 GB D2H + 19.6 GB H2D",
             pixfmt: "pix_fmt: nv12",
@@ -271,11 +271,11 @@ document.addEventListener('DOMContentLoaded', () => {
             nodes: { storage: true, host: true, pcie: false, gpu: false }
         },
         zerocopy: {
-            title: "Zero-Copy GPU Target (scale_cuda Architecture)",
-            badge: "100% VRAM Resident",
+            title: "Zero-Copy GPU Active (scale_cuda Architecture)",
+            badge: "Current Implementation",
             badgeClass: "bg-emerald-900/40 text-emerald-400 border-emerald-500/40",
-            note: "Decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
-            summary: "The target hardware pipeline using scale_cuda=-2:H:interp_algo=lanczos. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
+            note: "Active current pipeline: decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
+            summary: "The active current hardware pipeline using -hwaccel cuda -hwaccel_output_format cuda and hwupload_cuda,scale_cuda=-2:H:interp_algo=lanczos. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
             pcie: "~545 MB Total",
             pcieSub: "True Zero-Copy Pipeline",
             pixfmt: "pix_fmt: cuda",
