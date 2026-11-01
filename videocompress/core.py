@@ -599,13 +599,11 @@ def build_single_pass_cmd(
     # Build Filters
     if "nvenc" in encoder:
         if tgt_fps < src_fps:
-            filters.append(f"fps={tgt_fps}")
+            cmd.extend(["-r", str(tgt_fps)])
         pix_fmt = "yuv420p" if codec_type == "h264" else "nv12"
         if tgt_h > 0 and tgt_h != src_h:
-            filters.append("hwupload_cuda")
             filters.append(f"scale_cuda=-2:{tgt_h}:interp_algo=lanczos:format={pix_fmt}")
         elif codec_type == "h264":
-            filters.append("hwupload_cuda")
             filters.append("scale_cuda=format=yuv420p")
         if filters:
             cmd.extend(["-vf", ",".join(filters)])

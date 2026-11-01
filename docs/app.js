@@ -275,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
             badge: "Current Implementation",
             badgeClass: "bg-emerald-900/40 text-emerald-400 border-emerald-500/40",
             note: "Active current pipeline: decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
-            summary: "The active current hardware pipeline using -hwaccel cuda -hwaccel_output_format cuda and hwupload_cuda,scale_cuda=-2:H:interp_algo=lanczos. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
+            summary: "The active current hardware pipeline using -hwaccel cuda -hwaccel_output_format cuda and scale_cuda=-2:H:interp_algo=lanczos. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
             pcie: "~545 MB Total",
             pcieSub: "True Zero-Copy Pipeline",
             pixfmt: "pix_fmt: cuda",

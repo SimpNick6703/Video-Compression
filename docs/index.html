@@ -1060,7 +1060,7 @@
 
                             <div class="p-3 bg-slate-900/60 border border-slate-800 text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
                                 <span class="text-emerald-400 font-bold font-mono">Current Implementation:</span>
-                                Specifying <span class="font-mono text-emerald-300 font-bold">-hwaccel cuda -hwaccel_output_format cuda</span> combined with <span class="font-mono text-emerald-300 font-bold">-vf hwupload_cuda,scale_cuda=-2:720:interp_algo=lanczos</span> keeps decoded surfaces entirely in VRAM. This unlocks full zero-copy execution on NVIDIA silicon, matching the native 1080p efficiency while completing downscaling at maximum ASIC throughput.
+                                Specifying <span class="font-mono text-emerald-300 font-bold">-hwaccel cuda -hwaccel_output_format cuda</span> combined with <span class="font-mono text-emerald-300 font-bold">-vf scale_cuda=-2:720:interp_algo=lanczos</span> keeps decoded surfaces entirely in VRAM. This unlocks full zero-copy execution on NVIDIA silicon, matching the native 1080p efficiency while completing downscaling at maximum ASIC throughput.
                             </div>
                         </div>
                     </div>
@@ -1166,7 +1166,7 @@
 
                     <div class="p-4 bg-slate-900/60 border border-slate-800 text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
                         <span class="font-mono text-cyan-400 font-bold">Architectural Takeaway:</span>
-                        Legacy single-pass hybrid (<span class="text-amber-400 font-mono font-bold">Path 2</span>) delivered a 49.6% PCIe reduction and cut wall-clock encoding from 37.8s down to 22.4s by eliminating Pass 1 and using NVDEC. The active zero-copy <span class="text-emerald-400 font-mono font-bold">scale_cuda</span> pipeline (<span class="text-emerald-400 font-mono font-bold">Path 3</span>) with <span class="font-mono text-emerald-300 font-bold">-hwaccel cuda -hwaccel_output_format cuda</span> and <span class="font-mono text-emerald-300 font-bold">hwupload_cuda,scale_cuda=-2:720:interp_algo=lanczos</span> unlocks an additional 99.1% PCIe reduction down to 545 MB, freeing host CPU/RAM completely.
+                        Legacy single-pass hybrid (<span class="text-amber-400 font-mono font-bold">Path 2</span>) delivered a 49.6% PCIe reduction and cut wall-clock encoding from 37.8s down to 22.4s by eliminating Pass 1 and using NVDEC. The active zero-copy <span class="text-emerald-400 font-mono font-bold">scale_cuda</span> pipeline (<span class="text-emerald-400 font-mono font-bold">Path 3</span>) with <span class="font-mono text-emerald-300 font-bold">-hwaccel cuda -hwaccel_output_format cuda</span> and <span class="font-mono text-emerald-300 font-bold">scale_cuda=-2:720:interp_algo=lanczos</span> unlocks an additional 99.1% PCIe reduction down to 545 MB, freeing host CPU/RAM completely.
                     </div>
                 </div>
             </div>
