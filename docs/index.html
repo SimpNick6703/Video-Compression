@@ -25,8 +25,15 @@
     <meta property="twitter:description" content="A standalone pipeline targeting strict platform upload limits. It intelligently probes, calculates optimal Bits-Per-Pixel, splits the file, and runs multithreaded hardware encoding.">
     <meta property="twitter:image" content="https://repository-images.githubusercontent.com/1126110987/6c47cd61-6921-45f1-b455-2078cf301752">
 
+    <link rel="canonical" href="https://simpnick6703.github.io/Video-Compression/">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <link href="styles.css" rel="stylesheet">
@@ -47,7 +54,7 @@
         <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col md:flex-row justify-between h-auto md:h-16 items-center py-4 md:py-0 gap-4">
                 <div class="flex items-center gap-3">
-                    <a href="https://github.com/SimpNick6703/Video-Compression" target="_blank" class="flex items-center gap-2 hover:opacity-80 transition-opacity" title="View on GitHub">
+                    <a href="https://github.com/SimpNick6703/Video-Compression" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 hover:opacity-80 transition-opacity" title="View on GitHub">
                         <i class="fa-brands fa-github text-2xl text-cyan-400"></i>
                         <h1 class="text-xl font-bold text-white tracking-wide font-mono">Video-Compression</h1>
                     </a>
@@ -86,7 +93,7 @@
                     </p>
 
                     <div class="mt-8 flex flex-col items-center gap-4">
-                        <a href="https://github.com/SimpNick6703/Video-Compression/releases" target="_blank" class="bg-cyan-500 hover:bg-cyan-600 text-slate-900 font-bold font-mono py-3 px-8 rounded-lg transition-all text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transform hover:-translate-y-1">
+                        <a href="https://github.com/SimpNick6703/Video-Compression/releases" target="_blank" rel="noopener noreferrer" class="bg-cyan-500 hover:bg-cyan-600 text-slate-900 font-bold font-mono py-3 px-8 rounded-lg transition-all text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transform hover:-translate-y-1">
                             <i class="fa-solid fa-download mr-2"></i>
                             Download Latest Release
                         </a>
@@ -125,6 +132,7 @@
                 <div class="glass-panel p-2 rounded-xl border border-slate-700/50 shadow-[0_0_30px_rgba(6,182,212,0.15)]">
                     <video class="w-full rounded-lg bg-slate-900" controls autoplay loop muted playsinline>
                         <source src="https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669" type="video/mp4">
+                        <track kind="captions" srclang="en" label="English" src="assets/captions.vtt" default>
                         Your browser does not support the video tag.
                     </video>
                 </div>
@@ -176,7 +184,7 @@
                             <i class="fa-solid fa-layer-group"></i>
                         </div>
                         <h4 class="font-bold text-white mb-2">5. Stitch</h4>
-                        <p class="text-xs text-slate-400">Concatenates encoded chunks with <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="text-cyan-400 hover:underline font-mono text-xs">+faststart</a> for instant progressive streaming.</p>
+                        <p class="text-xs text-slate-400">Concatenates encoded chunks with <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline font-mono text-xs">+faststart</a> for instant progressive streaming.</p>
                     </div>
 
                 </div>
@@ -319,7 +327,7 @@
                     <!-- Visual Flowchart (Vector SVG Diagram) -->
                     <div class="mermaid-diagram-wrapper mb-6">
                         <div class="diagram-viewport">
-                            <img src="assets/workflow.svg" class="w-full max-w-4xl h-auto" alt="Smart Split 3-Phase Workload Partitioning Flowchart">
+                            <img src="assets/workflow.svg" width="896" height="420" loading="lazy" class="w-full max-w-4xl h-auto" alt="Smart Split 3-Phase Workload Partitioning Flowchart">
                         </div>
                     </div>
                     
@@ -378,13 +386,13 @@
                                         <span class="text-emerald-300">ffmpeg -f concat -safe 0 -i list.txt -c copy -movflags +faststart</span>
                                     </div>
                                     <p class="leading-relaxed">
-                                        Worker 1 and 2 run simultaneously on separate subprocesses. Concat demuxer stitches slices without re-encoding, placing the <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="font-mono text-emerald-300 hover:text-emerald-200 underline">moov box</a> at byte 32.
+                                        Worker 1 and 2 run simultaneously on separate subprocesses. Concat demuxer stitches slices without re-encoding, placing the <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="font-mono text-emerald-300 hover:text-emerald-200 underline">moov box</a> at byte 32.
                                     </p>
                                 </div>
                             </div>
                             <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-emerald-400 font-bold">
                                 <span>ZERO-COPY STITCH</span>
-                                <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="text-xs text-slate-400 hover:text-emerald-400 font-sans">moov guide &rarr;</a>
+                                <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-xs text-slate-400 hover:text-emerald-400 font-sans">moov guide &rarr;</a>
                             </div>
                         </div>
                     </div>
@@ -422,11 +430,11 @@
                         <div class="text-xs sm:text-sm text-emerald-400 font-bold uppercase tracking-wider">STAGE 04 // MUX</div>
                         <div class="text-base sm:text-lg font-bold text-white mt-1.5">Zero-Copy Concat</div>
                         <p class="text-sm text-slate-300 mt-2 font-sans leading-relaxed">
-                            FFmpeg concat demuxer (<span class="font-mono text-xs sm:text-sm text-emerald-300">-c copy</span>) joins bitstreams in sub-seconds without GPU re-encoding, relocating the index atom (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="font-mono text-xs sm:text-sm text-emerald-300 hover:text-emerald-200 underline">moov box</a>) to byte 32 for immediate web streaming.
+                            FFmpeg concat demuxer (<span class="font-mono text-xs sm:text-sm text-emerald-300">-c copy</span>) joins bitstreams in sub-seconds without GPU re-encoding, relocating the index atom (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="font-mono text-xs sm:text-sm text-emerald-300 hover:text-emerald-200 underline">moov box</a>) to byte 32 for immediate web streaming.
                         </p>
                         <div class="mt-4 flex items-center justify-between">
                             <span class="text-xs sm:text-sm text-emerald-400 font-bold">FASTSTART COMPLIANT</span>
-                            <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="text-xs sm:text-sm text-slate-400 hover:text-emerald-400 transition-colors font-sans">moov guide &rarr;</a>
+                            <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-xs sm:text-sm text-slate-400 hover:text-emerald-400 transition-colors font-sans">moov guide &rarr;</a>
                         </div>
                     </div>
                 </div>
@@ -490,7 +498,7 @@
                             <div class="bg-slate-900/80 border border-slate-800 p-3.5">
                                 <div class="text-xs sm:text-sm text-slate-400 uppercase font-semibold">Muxed Output</div>
                                 <div class="text-base sm:text-lg font-bold text-cyan-400 mt-0.5">&lt; 100.00 MB</div>
-                                <div class="text-xs sm:text-sm text-slate-400 mt-0.5">output.mp4 (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="text-cyan-400 hover:underline font-mono">+faststart</a>)</div>
+                                <div class="text-xs sm:text-sm text-slate-400 mt-0.5">output.mp4 (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline font-mono">+faststart</a>)</div>
                             </div>
                         </div>
                     </div>
@@ -694,7 +702,7 @@
                                     <span>// CPU DECODE BOTTLENECK DATAFLOW DIAGRAM</span>
                                 </div>
                                 <div class="diagram-viewport">
-                                    <img src="assets/path1.svg" class="w-full max-w-4xl h-auto" alt="Path 1 CPU Software Decode Bottleneck Flowchart">
+                                    <img src="assets/path1.svg" width="896" height="420" loading="lazy" class="w-full max-w-4xl h-auto" alt="Path 1 CPU Software Decode Bottleneck Flowchart">
                                 </div>
                             </div>
 
@@ -809,7 +817,7 @@
                                     <span>// INTERCONNECT DATAFLOW DIAGRAM (PCIE PING-PONG ROUNDTRIP)</span>
                                 </div>
                                 <div class="diagram-viewport">
-                                    <img src="assets/path2.svg" class="w-full max-w-4xl h-auto" alt="Path 2 Current Hybrid Downscale Pipeline Flowchart">
+                                    <img src="assets/path2.svg" width="896" height="420" loading="lazy" class="w-full max-w-4xl h-auto" alt="Path 2 Current Hybrid Downscale Pipeline Flowchart">
                                 </div>
                             </div>
 
@@ -955,7 +963,7 @@
                                     <span>// ZERO-COPY ON-CHIP DATAFLOW DIAGRAM (SCALE_CUDA RESIDENT)</span>
                                 </div>
                                 <div class="diagram-viewport">
-                                    <img src="assets/path3.svg" class="w-full max-w-4xl h-auto" alt="Path 3 Zero-Copy scale_cuda Pipeline Flowchart">
+                                    <img src="assets/path3.svg" width="896" height="420" loading="lazy" class="w-full max-w-4xl h-auto" alt="Path 3 Zero-Copy scale_cuda Pipeline Flowchart">
                                 </div>
                             </div>
 
@@ -1177,28 +1185,28 @@
                     // ARCHITECTURAL DOCUMENTATION &amp; STANDARDS
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <a href="https://developer.nvidia.com/video-codec-sdk" target="_blank" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-emerald-400 hover:bg-slate-900 transition-all group block">
+                    <a href="https://developer.nvidia.com/video-codec-sdk" target="_blank" rel="noopener noreferrer" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-emerald-400 hover:bg-slate-900 transition-all group block">
                         <div class="flex items-center justify-between text-slate-400 group-hover:text-emerald-400 font-mono">
                             <span class="text-sm sm:text-base font-bold text-white group-hover:text-emerald-400">NVIDIA Codec SDK</span>
                             <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
                         </div>
                         <div class="text-xs sm:text-sm text-slate-400 mt-2 font-sans leading-relaxed">NVENC / NVDEC hardware specifications and CUDA surface management.</div>
                     </a>
-                    <a href="https://trac.ffmpeg.org/wiki/HWAccelIntro" target="_blank" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-cyan-400 hover:bg-slate-900 transition-all group block">
+                    <a href="https://trac.ffmpeg.org/wiki/HWAccelIntro" target="_blank" rel="noopener noreferrer" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-cyan-400 hover:bg-slate-900 transition-all group block">
                         <div class="flex items-center justify-between text-slate-400 group-hover:text-cyan-400 font-mono">
                             <span class="text-sm sm:text-base font-bold text-white group-hover:text-cyan-400">FFmpeg HWAccel</span>
                             <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
                         </div>
                         <div class="text-xs sm:text-sm text-slate-400 mt-2 font-sans leading-relaxed">Hardware acceleration filtergraph and surface sharing guide.</div>
                     </a>
-                    <a href="https://developer.apple.com/documentation/videotoolbox" target="_blank" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-slate-300 hover:bg-slate-900 transition-all group block">
+                    <a href="https://developer.apple.com/documentation/videotoolbox" target="_blank" rel="noopener noreferrer" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-slate-300 hover:bg-slate-900 transition-all group block">
                         <div class="flex items-center justify-between text-slate-400 group-hover:text-slate-200 font-mono">
                             <span class="text-sm sm:text-base font-bold text-white group-hover:text-slate-200">Apple VideoToolbox</span>
                             <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
                         </div>
                         <div class="text-xs sm:text-sm text-slate-400 mt-2 font-sans leading-relaxed">Hardware encoding/decoding on Apple Silicon and macOS.</div>
                     </a>
-                    <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-fuchsia-400 hover:bg-slate-900 transition-all group block">
+                    <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="p-4 border border-slate-800 bg-slate-900/60 hover:border-fuchsia-400 hover:bg-slate-900 transition-all group block">
                         <div class="flex items-center justify-between text-slate-400 group-hover:text-fuchsia-400 font-mono">
                             <span class="text-sm sm:text-base font-bold text-white group-hover:text-fuchsia-400">MpegFlow MP4 Faststart</span>
                             <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
@@ -1231,7 +1239,7 @@
                     </div>
                     <div class="glass-panel p-5 rounded-xl border-l-4 border-fuchsia-500">
                         <h4 class="font-bold text-white mb-2 text-sm"><i class="fa-solid fa-link mr-2 text-fuchsia-400"></i>Safe Concatenation</h4>
-                        <p class="text-xs text-slate-400">Chunks are stitched using FFmpeg's <span class="font-mono text-fuchsia-300">concat</span> demuxer with <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" class="text-fuchsia-400 hover:underline font-mono">+faststart</a>, relocating the moov atom to the front for progressive streaming without re-encoding.</p>
+                        <p class="text-xs text-slate-400">Chunks are stitched using FFmpeg's <span class="font-mono text-fuchsia-300">concat</span> demuxer with <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-fuchsia-400 hover:underline font-mono">+faststart</a>, relocating the moov atom to the front for progressive streaming without re-encoding.</p>
                     </div>
                 </div>
 
@@ -1261,25 +1269,25 @@
                     
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Target Size (MB)</label>
+                            <label for="calc-mb" class="block text-xs font-bold text-slate-400 uppercase mb-1">Target Size (MB)</label>
                             <input type="number" id="calc-mb" value="100" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none transition-colors">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Duration (Seconds)</label>
+                            <label for="calc-dur" class="block text-xs font-bold text-slate-400 uppercase mb-1">Duration (Seconds)</label>
                             <input type="number" id="calc-dur" value="120" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none transition-colors">
                         </div>
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Width</label>
+                                <label for="calc-w" class="block text-xs font-bold text-slate-400 uppercase mb-1">Width</label>
                                 <input type="number" id="calc-w" value="2560" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none transition-colors">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Height</label>
+                                <label for="calc-h" class="block text-xs font-bold text-slate-400 uppercase mb-1">Height</label>
                                 <input type="number" id="calc-h" value="1440" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none transition-colors">
                             </div>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Source FPS</label>
+                            <label for="calc-fps" class="block text-xs font-bold text-slate-400 uppercase mb-1">Source FPS</label>
                             <input type="number" id="calc-fps" value="120" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white font-mono focus:border-cyan-500 focus:outline-none transition-colors">
                         </div>
                     </div>
@@ -1350,12 +1358,12 @@
     <footer class="py-6 border-t border-slate-800 text-center relative z-10 bg-slate-900/80 backdrop-blur mt-auto">
         <p class="text-slate-500 font-mono text-xs">
             Video-Compression Architecture Explorer | 
-            <a href="https://github.com/SimpNick6703/Video-Compression" target="_blank" class="text-cyan-400 hover:underline transition-all">
+            <a href="https://github.com/SimpNick6703/Video-Compression" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline transition-all">
                 GitHub Repository
             </a>
         </p>
     </footer>
 
-    <script src="app.js"></script>
+    <script src="app.js" defer></script>
 </body>
 </html>

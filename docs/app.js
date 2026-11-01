@@ -27,34 +27,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Chart.js Initialization ---
-    Chart.defaults.color = '#94a3b8';
-    Chart.defaults.font.family = "'JetBrains Mono', monospace";
-    
-    const ctx = document.getElementById('encodeChart').getContext('2d');
-    encodeChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Serial', 'Parallel'],
-            datasets: [
-                { label: 'Chunk 1', data: [240, 60], backgroundColor: '#06b6d4', barThickness: 40 },
-                { label: 'Chunk 2', data: [0, 60], backgroundColor: '#8b5cf6', barThickness: 40 },
-                { label: 'Stitch Overhead', data: [0, 5], backgroundColor: '#d946ef', barThickness: 40 }
-            ]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom' },
-                tooltip: { callbacks: { label: (c) => c.dataset.label } }
-            },
-            scales: {
-                x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { display: false } },
-                y: { stacked: true, grid: { display: false } }
-            }
+    if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'JetBrains Mono', monospace";
+        
+        const chartCanvas = document.getElementById('encodeChart');
+        if (chartCanvas) {
+            const ctx = chartCanvas.getContext('2d');
+            encodeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Serial', 'Parallel'],
+                    datasets: [
+                        { label: 'Chunk 1', data: [240, 60], backgroundColor: '#06b6d4', barThickness: 40 },
+                        { label: 'Chunk 2', data: [0, 60], backgroundColor: '#8b5cf6', barThickness: 40 },
+                        { label: 'Stitch Overhead', data: [0, 5], backgroundColor: '#d946ef', barThickness: 40 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: { callbacks: { label: (c) => c.dataset.label } }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { display: false } },
+                        y: { stacked: true, grid: { display: false } }
+                    }
+                }
+            });
         }
-    });
+    }
 
     // --- BPP Calculator Logic ---
     const MIN_BPP = 0.04;
