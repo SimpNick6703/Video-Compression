@@ -1,6 +1,7 @@
 # Video-Compression
 
 [![GitHub Release](https://img.shields.io/github/v/release/SimpNick6703/Video-Compression?style=flat-square&color=06b6d4)](https://github.com/SimpNick6703/Video-Compression/releases)
+[![GitHub Pre-Release](https://img.shields.io/github/v/release/SimpNick6703/Video-Compression?include_prereleases&label=pre-release&style=flat-square&color=f59e0b)](https://github.com/SimpNick6703/Video-Compression/releases)
 [![Downloads](https://img.shields.io/github/downloads/SimpNick6703/Video-Compression/total?style=flat-square&color=8b5cf6)](https://github.com/SimpNick6703/Video-Compression/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=flat-square)](LICENSE)
 [![Platform Support](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-emerald?style=flat-square)](#requirements)
