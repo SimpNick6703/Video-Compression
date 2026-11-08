@@ -35,6 +35,7 @@ jobs:
       - name: Build Executables
         env:
           BUILD_VERSION: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python build.py
 
       # --- Upload Section ---

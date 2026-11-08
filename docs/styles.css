@@ -161,6 +161,365 @@ body {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* --- DATAFLOW SECTION LAYOUT --- */
+@media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+}
+.df-anchor { scroll-margin-top: 7.5rem; }
+@media (min-width: 768px) {
+    .df-anchor { scroll-margin-top: 8.5rem; }
+}
+.df-block { margin-top: 3.5rem; }
+.df-block-head { margin-bottom: 1.25rem; }
+.df-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #22d3ee;
+}
+.df-title {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.5rem;
+    line-height: 1.25;
+    font-weight: 700;
+    color: #ffffff;
+    margin-top: 0.35rem;
+}
+@media (min-width: 640px) {
+    .df-title { font-size: 1.75rem; }
+}
+.df-lead {
+    margin-top: 0.5rem;
+    max-width: 48rem;
+    color: #cbd5e1;
+    font-size: 1rem;
+    line-height: 1.65;
+}
+
+/* In-section navigation (sticky below the site header on md+) */
+.df-subnav {
+    position: relative;
+    z-index: 40;
+    margin: 0 -1rem;
+    padding: 0.5rem 1rem;
+    background: rgba(7, 11, 20, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(51, 65, 85, 0.6);
+    border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+}
+@media (min-width: 768px) {
+    .df-subnav { position: sticky; top: 4rem; }
+}
+.df-subnav-list {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.df-subnav-list::-webkit-scrollbar { display: none; }
+.df-subnav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #94a3b8;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+.df-subnav-link:hover { color: #e2e8f0; background: rgba(30, 41, 59, 0.6); }
+.df-subnav-link:focus-visible { outline: 2px solid var(--nav-focus); outline-offset: 2px; }
+.df-subnav-link[aria-current="location"] {
+    color: #22d3ee;
+    background: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.35);
+}
+.df-subnav-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 9999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    background: rgba(51, 65, 85, 0.6);
+    color: #cbd5e1;
+}
+.df-subnav-link[aria-current="location"] .df-subnav-num { background: #06b6d4; color: #03121a; }
+
+/* Shared building blocks */
+.df-card {
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background: rgba(2, 6, 23, 0.75);
+    border-radius: 8px;
+}
+.df-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+}
+.df-card-title { font-weight: 700; color: #f1f5f9; font-size: 1rem; }
+.df-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+.df-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 1.0625rem;
+    line-height: 1.35;
+    margin-top: 0.2rem;
+}
+.df-sub { font-size: 0.8125rem; line-height: 1.45; color: #94a3b8; margin-top: 0.15rem; }
+.df-chip {
+    display: inline-flex;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid rgba(71, 85, 105, 0.7);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.df-stat {
+    padding: 1.1rem 1.25rem;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    border-left-width: 3px;
+    background: rgba(2, 6, 23, 0.75);
+    border-radius: 8px;
+}
+.df-stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 1.5rem;
+    line-height: 1.2;
+    margin-top: 0.35rem;
+}
+.df-callout {
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    border-left: 3px solid #22d3ee;
+    background: rgba(15, 23, 42, 0.6);
+    padding: 0.9rem 1.1rem;
+    border-radius: 6px;
+    color: #cbd5e1;
+    font-size: 0.9375rem;
+    line-height: 1.65;
+}
+.df-callout > strong:first-child { color: #ffffff; }
+.df-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    color: #a5f3fc;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    vertical-align: bottom;
+}
+.df-pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+    color: #a5f3fc;
+    background: rgba(2, 6, 23, 0.9);
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    padding: 0.65rem 0.85rem;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.df-details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.25rem;
+    font-weight: 600;
+    color: #67e8f9;
+}
+.df-details > summary::-webkit-details-marker { display: none; }
+.df-details > summary::before {
+    content: '\25B8';
+    display: inline-block;
+    transition: transform 0.15s ease;
+}
+.df-details[open] > summary::before { transform: rotate(90deg); }
+.df-details > summary:hover { color: #a5f3fc; }
+.df-details > summary:focus-visible { outline: 2px solid var(--nav-focus); outline-offset: -2px; }
+.df-details-body { padding: 0 1.25rem 1.25rem; color: #cbd5e1; font-size: 0.9375rem; line-height: 1.65; }
+
+/* Mode explorer hardware bays */
+.df-bay {
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background: rgba(2, 6, 23, 0.7);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+}
+.df-bay-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; }
+.df-bay-title { font-weight: 700; color: #f1f5f9; }
+.df-bay-head .df-chip { margin-left: auto; }
+.df-dot { width: 0.6rem; height: 0.6rem; border-radius: 2px; flex: none; }
+.df-bay-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.df-cell {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(51, 65, 85, 0.55);
+    border-radius: 6px;
+    padding: 0.7rem 0.85rem;
+}
+.df-mode-name { display: block; font-weight: 700; color: #f1f5f9; font-size: 1rem; }
+.df-mode-sub { display: block; font-size: 0.8125rem; color: #94a3b8; margin-top: 0.25rem; }
+
+/* Pipeline diagram cards */
+.df-path-stack > * + * { margin-top: 1.5rem; }
+.schematic-compare { display: grid; gap: 1.5rem; }
+.schematic-compare > * + * { margin-top: 0; }
+@media (min-width: 1024px) {
+    .schematic-compare { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .schematic-compare .df-domains { grid-template-columns: minmax(0, 1fr); }
+}
+.df-path-card {
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    background: rgba(2, 6, 23, 0.85);
+    border-radius: 8px;
+    padding: 1.25rem;
+}
+@media (min-width: 640px) {
+    .df-path-card { padding: 1.5rem; }
+}
+.df-path-card > * + * { margin-top: 1.25rem; }
+.df-path-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+}
+.df-path-title {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-top: 0.25rem;
+}
+.df-path-desc { margin-top: 0.35rem; color: #cbd5e1; font-size: 0.9375rem; line-height: 1.6; max-width: 46rem; }
+.df-domains { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1024px) {
+    .df-domains { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.df-domain {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    border: 1px solid rgba(51, 65, 85, 0.6);
+    border-top-width: 2px;
+    border-radius: 6px;
+    background: rgba(2, 6, 23, 0.6);
+    padding: 0.9rem;
+}
+.df-domain-title {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #e2e8f0;
+}
+.df-domain-tag { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }
+.df-lanes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.df-lane {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    border-radius: 4px;
+    padding: 0.6rem 0.7rem;
+}
+.df-lane-row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+.df-lane-value { display: block; font-weight: 700; color: #f1f5f9; font-size: 0.875rem; margin-top: 0.15rem; }
+.df-domain-foot {
+    margin-top: auto;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(51, 65, 85, 0.6);
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+/* Benchmarks table */
+.df-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
+.df-table th,
+.df-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+    text-align: left;
+    vertical-align: top;
+}
+.df-table thead th { background: rgba(15, 23, 42, 0.95); font-weight: 700; }
+.df-table thead th .df-sub { font-weight: 500; }
+.df-table th[scope="row"] {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #0a0f1c;
+    color: #f1f5f9;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.df-table td { font-family: 'JetBrains Mono', monospace; color: #cbd5e1; white-space: nowrap; }
+.df-table .df-col-current {
+    background: rgba(6, 78, 59, 0.22);
+    box-shadow: inset 1px 0 0 rgba(16, 185, 129, 0.35), inset -1px 0 0 rgba(16, 185, 129, 0.35);
+}
+
+/* Split & stitch steps */
+.df-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 768px) {
+    .df-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.df-step {
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    border-top-width: 2px;
+    border-radius: 6px;
+    background: rgba(2, 6, 23, 0.7);
+    padding: 1rem;
+}
+.df-step > * + * { margin-top: 0.6rem; }
+.df-step p { color: #cbd5e1; font-size: 0.9rem; line-height: 1.6; }
+
 /* --- DATAFLOW VISUALIZER STYLES --- */
 .df-mode-btn {
     position: relative;
@@ -168,6 +527,10 @@ body {
 }
 .df-mode-btn:hover {
     border-color: rgba(6, 182, 212, 0.5);
+}
+.df-mode-btn:focus-visible {
+    outline: 2px solid var(--nav-focus);
+    outline-offset: 2px;
 }
 .mode-btn-active {
     background: rgba(6, 182, 212, 0.12) !important;
@@ -195,9 +558,20 @@ body {
 
 /* --- PHYSICAL SCHEMATIC DIAGRAM STYLES --- */
 .schematic-btn {
-    border: 1px solid transparent;
+    border: 1px solid rgba(51, 65, 85, 0.7);
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.8);
+    color: #cbd5e1;
     cursor: pointer;
+    text-align: left;
+    padding: 0.5rem 0.85rem;
+    font-weight: 700;
+    font-size: 0.875rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
+.schematic-btn:hover { border-color: rgba(6, 182, 212, 0.5); color: #ffffff; }
+.schematic-btn:focus-visible { outline: 2px solid var(--nav-focus); outline-offset: 2px; }
+.schematic-btn .df-btn-sub { display: block; font-size: 0.75rem; font-weight: 500; color: #94a3b8; margin-top: 0.1rem; }
 .schematic-btn-active {
     background: rgba(6, 182, 212, 0.15) !important;
     border-color: #06b6d4 !important;

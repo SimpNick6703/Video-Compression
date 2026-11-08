@@ -10,7 +10,19 @@ import os
 import logging
 from typing import Optional, List
 
+from videocompress.core import get_resource_path
+from videocompress.diagnostics import (
+    MemoryLogHandler,
+    build_report,
+    configure_logging,
+    read_ffmpeg_version,
+    write_error_log,
+)
+
 from videocompress.encode import compress_video
+from videocompress.version import app_version
+
+log = logging.getLogger(__name__)
 
 DEFAULT_TARGET_MB: float = 100.0
 
@@ -41,8 +53,9 @@ def main() -> None:
         sys.stdout.write("Usage: videocompress <input.mp4> [output.mp4] [size_in_mb] [hevc/h264] [--verbose]\n")
         sys.exit(1)
 
-    if "--verbose" in sys.argv or "-v" in sys.argv or os.environ.get("DEBUG") == "1":
-        logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(name)s: %(message)s")
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv or os.environ.get("DEBUG") == "1"
+    log_buffer = configure_logging(verbose)
+    log.debug("Video-Compression %s", app_version())
 
     input_file: Optional[str] = None
     output_file: Optional[str] = None
@@ -94,9 +107,32 @@ def main() -> None:
         if not success:
             if result and "Cancelled" not in result:
                 sys.stderr.write(f"Compression failed: {result}\n")
+            _save_error_log(log_buffer, inp_path)
             sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)
+    except Exception:
+        log.exception("Unexpected error")
+        _save_error_log(log_buffer, inp_path)
+        raise
+
+
+def _save_error_log(log_buffer: MemoryLogHandler, input_path: str) -> None:
+    """Write the buffered run log next to the input when an error was logged.
+
+    Args:
+        log_buffer: Handler holding this run's log records.
+        input_path: Input video path, used to place the log file.
+    """
+    if not log_buffer.has_errors:
+        return
+    ffmpeg_exe = get_resource_path("ffmpeg")
+    report = build_report(
+        log_buffer.lines, sys.argv, ffmpeg_exe, read_ffmpeg_version(ffmpeg_exe), app_version()
+    )
+    path = write_error_log(report, input_path)
+    if path is not None:
+        sys.stderr.write(f"Details saved to: {path}\n")
 
 
 if __name__ == "__main__":

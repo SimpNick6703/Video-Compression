@@ -18,8 +18,14 @@ import subprocess
 import tempfile
 import tarfile
 import zipfile
+import json
 import logging
+import platform
+import sysconfig
+import importlib.metadata
+import urllib.error
 import urllib.request
+from typing import Optional
 from pathlib import Path
 import concurrent.futures
 
@@ -30,9 +36,32 @@ SOURCE_PACKAGE = "videocompress"
 FFMPEG_BINARIES = ["ffmpeg", "ffprobe"]
 OUTPUT_DIR = "dist"
 
-# Default minimal FFmpeg repository and release tag
+# Filters the hardware-resident pipelines rely on, per platform
+REQUIRED_FILTERS = {
+    "linux": ("scale_cuda", "hwupload_cuda", "scale_vaapi", "hwupload", "fps"),
+    "win32": ("scale_cuda", "hwupload_cuda", "vpp_amf", "vpp_qsv", "hwmap", "hwupload", "fps"),
+    "darwin": ("scale_vt", "hwupload", "fps"),
+}
+FILTER_FLAGS_PATTERN = re.compile(r"[TSC.|]{2,3}")
+FILTER_CHECK_TIMEOUT_S = 30
+
+# Minimal FFmpeg repository. FFMPEG_RELEASE_TAG pins a release; unset or "latest"
+# selects the highest FFmpeg version, then the highest revision (e.g. ffmpeg-n9.0.2-r2).
 FFMPEG_REPO = os.environ.get("FFMPEG_REPO", "SimpNick6703/ffmpeg-minimal-builds")
 FFMPEG_RELEASE_TAG = os.environ.get("FFMPEG_RELEASE_TAG", "latest")
+FFMPEG_TAG_PATTERN = re.compile(r"^ffmpeg-n(\d+(?:\.\d+)*)(?:-r(\d+))?$")
+RELEASES_API_TIMEOUT_S = 30
+
+# License notices shipped next to the executables
+FFMPEG_NOTICES_DIR = "ffmpeg-licenses"
+LICENSE_FILE_PATTERN = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|AUTHORS)", re.IGNORECASE)
+BUNDLED_DISTRIBUTIONS = (
+    ("pyinstaller", "bootloader: GPL-2.0-or-later with a distribution exception"),
+    ("rich", "MIT"),
+    ("markdown-it-py", "MIT"),
+    ("mdurl", "MIT"),
+    ("Pygments", "BSD-2-Clause"),
+)
 
 
 # --- Logging Setup ---
@@ -50,9 +79,85 @@ def get_macos_arch() -> str:
     return "arm64" if "arm" in machine or "aarch64" in machine else "x86_64"
 
 
-def get_ffmpeg_download_info() -> tuple[str, str]:
+def parse_ffmpeg_release_tag(tag: str) -> Optional[tuple[tuple[int, ...], int]]:
+    """Parse an ffmpeg-minimal-builds tag into (FFmpeg version, revision).
+
+    A tag without a revision suffix counts as revision 1.
+
+    Example:
+        >>> parse_ffmpeg_release_tag("ffmpeg-n9.0.2-r2")
+        ((9, 0, 2), 2)
+        >>> parse_ffmpeg_release_tag("ffmpeg-n9.0.2")
+        ((9, 0, 2), 1)
+        >>> parse_ffmpeg_release_tag("v1.2.0") is None
+        True
+    """
+    match = FFMPEG_TAG_PATTERN.match(tag)
+    if not match:
+        return None
+    version_parts = tuple(int(part) for part in match.group(1).split("."))
+    return version_parts, int(match.group(2) or 1)
+
+
+def select_latest_ffmpeg_tag(tags: list[str]) -> Optional[str]:
+    """Pick the tag with the highest FFmpeg version, then the highest revision.
+
+    Example:
+        >>> select_latest_ffmpeg_tag(["ffmpeg-n9.0.2", "ffmpeg-n9.0.2-r2", "ffmpeg-n8.1"])
+        'ffmpeg-n9.0.2-r2'
+    """
+    parsed = [(key, tag) for tag in tags if (key := parse_ffmpeg_release_tag(tag)) is not None]
+    return max(parsed)[1] if parsed else None
+
+
+def fetch_ffmpeg_release_tags(repo: str) -> list[str]:
+    """List published (non-draft, non-prerelease) release tags of the FFmpeg repository.
+
+    Uses GITHUB_TOKEN or GH_TOKEN when set, which avoids the low anonymous
+    API rate limit on shared CI runners.
+
+    Raises:
+        urllib.error.URLError: On network or HTTP failure.
+        ValueError: If the response is not the expected JSON list.
+    """
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repo}/releases?per_page=100",
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "video-compression-build"},
+    )
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=RELEASES_API_TIMEOUT_S) as response:
+        releases = json.loads(response.read().decode("utf-8"))
+    if not isinstance(releases, list):
+        raise ValueError("Unexpected releases API response")
+    return [
+        release["tag_name"] for release in releases
+        if not release.get("draft") and not release.get("prerelease") and "tag_name" in release
+    ]
+
+
+def resolve_ffmpeg_release_tag() -> str:
+    """Return the release tag to download: the pinned tag, else the highest-version release.
+
+    Falls back to GitHub's "latest" alias if the releases cannot be listed.
+    """
+    if FFMPEG_RELEASE_TAG != "latest":
+        return FFMPEG_RELEASE_TAG
+    try:
+        tag = select_latest_ffmpeg_tag(fetch_ffmpeg_release_tags(FFMPEG_REPO))
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        log.warning("Could not list FFmpeg releases (%s); using GitHub's latest release", e)
+        return "latest"
+    if tag is None:
+        log.warning("No ffmpeg-n<version> releases found; using GitHub's latest release")
+        return "latest"
+    return tag
+
+
+def get_ffmpeg_download_info(tag: str) -> tuple[str, str]:
     """Resolve FFmpeg download URL and archive type for the current platform."""
-    tag_path = f"download/{FFMPEG_RELEASE_TAG}" if FFMPEG_RELEASE_TAG != "latest" else "latest/download"
+    tag_path = f"download/{tag}" if tag != "latest" else "latest/download"
     base_url = f"https://github.com/{FFMPEG_REPO}/releases/{tag_path}"
 
     if sys.platform == "win32":
@@ -108,9 +213,126 @@ def download_file(url: str, dest: str) -> None:
             time.sleep(2)
 
 
-def download_ffmpeg() -> bool:
-    """Download FFmpeg binaries for the current platform."""
-    url, archive_type = get_ffmpeg_download_info()
+def notice_destination(member_name: str) -> Optional[Path]:
+    """Map an FFmpeg archive member to its local path if it is a license or build-info file.
+
+    Only `BUILD_INFO.txt` and plain files directly inside `licenses/` are kept;
+    anything else (including path traversal) returns None.
+
+    Example:
+        >>> notice_destination("licenses/x264-COPYING").as_posix()
+        'ffmpeg-licenses/licenses/x264-COPYING'
+        >>> notice_destination("../evil") is None
+        True
+    """
+    parts = Path(member_name).parts
+    if parts == ("BUILD_INFO.txt",):
+        return Path(FFMPEG_NOTICES_DIR) / "BUILD_INFO.txt"
+    if len(parts) == 2 and parts[0] == "licenses" and parts[1] not in ("", ".", ".."):
+        return Path(FFMPEG_NOTICES_DIR) / "licenses" / parts[1]
+    return None
+
+
+def _read_text(path: Path) -> str:
+    """Read a text file leniently (license files are not always UTF-8)."""
+    return path.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def python_license_file() -> Optional[Path]:
+    """Locate the running Python's LICENSE file (it also covers the libraries CPython bundles)."""
+    candidates = [Path(sys.base_prefix) / "LICENSE.txt", Path(sysconfig.get_path("stdlib")) / "LICENSE.txt"]
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def distribution_license_texts(name: str) -> list[tuple[str, str]]:
+    """Return (file name, text) for each license/notice file of an installed distribution.
+
+    Example:
+        >>> distribution_license_texts("no-such-dist-xyz")
+        []
+    """
+    try:
+        dist = importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return []
+    texts = []
+    for file in dist.files or []:
+        if ".dist-info" in str(file) and LICENSE_FILE_PATTERN.match(file.name):
+            texts.append((file.name, _read_text(Path(dist.locate_file(file)))))
+    return texts
+
+
+def _section(title: str, body: str) -> str:
+    return f"{'=' * 78}\n{title}\n{'=' * 78}\n\n{body.strip()}\n\n"
+
+
+def build_third_party_notices(app_version: str, ffmpeg_notices: Path) -> str:
+    """Assemble the third-party notices for the executables built on this platform.
+
+    Covers the bundled FFmpeg (license texts and exact source revisions from its
+    archive), the Python runtime, the PyInstaller bootloader and the bundled
+    Python packages.
+
+    Args:
+        app_version: Version of the executables being built.
+        ffmpeg_notices: Directory holding the FFmpeg archive's BUILD_INFO.txt and licenses/.
+
+    Returns:
+        The notices text.
+    """
+    parts = [
+        f"Video-Compression {app_version} third-party notices\n\n"
+        "Video-Compression is licensed under GPL-3.0-or-later (full text at the end of this file). Its executables\n"
+        "bundle the components below. Source code: https://github.com/SimpNick6703/Video-Compression\n\n"
+    ]
+
+    build_info = ffmpeg_notices / "BUILD_INFO.txt"
+    if build_info.is_file():
+        ffmpeg_body = _read_text(build_info)
+        for license_file in sorted((ffmpeg_notices / "licenses").glob("*")):
+            ffmpeg_body += f"\n\n--- {license_file.name} ---\n\n{_read_text(license_file)}"
+    else:
+        ffmpeg_body = (
+            "FFmpeg and FFprobe from https://github.com/SimpNick6703/ffmpeg-minimal-builds, built from\n"
+            "FFmpeg with x264 and x265 under GPL-3.0-or-later. Exact source revisions and license texts\n"
+            "are listed in BUILD_INFO.txt and licenses/ inside the matching release archive."
+        )
+    parts.append(_section("FFmpeg / FFprobe (GPL-3.0-or-later)", ffmpeg_body))
+
+    python_license = python_license_file()
+    parts.append(_section(
+        f"Python {platform.python_version()} runtime (PSF License and bundled library licenses)",
+        _read_text(python_license) if python_license else "See https://docs.python.org/3/license.html",
+    ))
+
+    for dist_name, label in BUNDLED_DISTRIBUTIONS:
+        texts = distribution_license_texts(dist_name)
+        try:
+            dist_version = importlib.metadata.version(dist_name)
+        except importlib.metadata.PackageNotFoundError:
+            log.warning("  %s is not installed; its notice is missing from THIRD_PARTY_NOTICES", dist_name)
+            continue
+        body = "\n\n".join(f"--- {name} ---\n\n{text}" for name, text in texts) or "License file not found."
+        parts.append(_section(f"{dist_name} {dist_version} ({label})", body))
+
+    return "".join(parts)
+
+
+def write_release_notices(app_version: str) -> None:
+    """Write THIRD_PARTY_NOTICES-<platform>.txt (project license plus bundled licenses) next to the executables.
+
+    One file per platform, so parallel CI jobs never upload release assets with the same name.
+    """
+    notices_path = Path(OUTPUT_DIR) / f"THIRD_PARTY_NOTICES-{get_platform_suffix()}.txt"
+    project_license = _section("Video-Compression license (GPL-3.0-or-later)", _read_text(Path("LICENSE")))
+    notices = build_third_party_notices(app_version, Path(FFMPEG_NOTICES_DIR))
+    notices_path.write_text(notices + project_license, encoding="utf-8")
+    log.info("Wrote %s", notices_path)
+
+
+def download_ffmpeg(tag: str) -> bool:
+    """Download FFmpeg binaries for the current platform from the given release tag."""
+    url, archive_type = get_ffmpeg_download_info(tag)
     log.info("Downloading minimal FFmpeg (%s)...", archive_type)
 
     try:
@@ -127,6 +349,9 @@ def download_ffmpeg() -> bool:
                         if sys.platform != "win32":
                             os.chmod(basename, 0o755)
                         log.info("  Extracted %s", basename)
+                    elif not member.endswith("/") and (notice := notice_destination(member)) is not None:
+                        notice.parent.mkdir(parents=True, exist_ok=True)
+                        notice.write_bytes(zf.read(member))
 
             os.remove(archive_path)
 
@@ -146,6 +371,12 @@ def download_ffmpeg() -> bool:
                             if sys.platform != "win32":
                                 os.chmod(basename, 0o755)
                             log.info("  Extracted %s", basename)
+                    elif member.isfile() and (notice := notice_destination(member.name)) is not None:
+                        src = tf.extractfile(member)
+                        if src is not None:
+                            notice.parent.mkdir(parents=True, exist_ok=True)
+                            notice.write_bytes(src.read())
+                            src.close()
 
             os.remove(archive_path)
 
@@ -198,12 +429,112 @@ def find_binary(name: str) -> str:
     raise FileNotFoundError(f"Could not find '{name}' in root directory or system PATH")
 
 
-def create_preset_script(target_mb: int, codec: str, temp_dir: str) -> str:
-    """Create a temporary script wrapper with hardcoded preset parameters."""
+def required_filters_for(platform: str) -> tuple[str, ...]:
+    """Return the FFmpeg filters required on a platform.
+
+    Example:
+        >>> "scale_vaapi" in required_filters_for("linux")
+        True
+    """
+    return REQUIRED_FILTERS.get(platform, REQUIRED_FILTERS["linux"])
+
+
+def parse_filter_names(filters_output: str) -> set[str]:
+    """Extract filter names (2nd column) from `ffmpeg -filters` output.
+
+    Example:
+        >>> parse_filter_names(" T.. fps  V->V  Force constant framerate.")
+        {'fps'}
+    """
+    names: set[str] = set()
+    for line in filters_output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] != "=" and FILTER_FLAGS_PATTERN.fullmatch(parts[0]):
+            names.add(parts[1])
+    return names
+
+
+def find_missing_filters(ffmpeg_path: str, required: tuple[str, ...]) -> list[str]:
+    """Return required filters absent from an FFmpeg binary.
+
+    If the binary cannot be run, every required filter is reported missing.
+
+    Example:
+        >>> find_missing_filters("ffmpeg", ("fps",))  # doctest: +SKIP
+        []
+    """
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, "-hide_banner", "-filters"],
+            capture_output=True, text=True, check=True, timeout=FILTER_CHECK_TIMEOUT_S,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        log.warning("Could not list FFmpeg filters from %s: %s", ffmpeg_path, e)
+        return list(required)
+    available = parse_filter_names(result.stdout)
+    return [name for name in required if name not in available]
+
+
+def verify_ffmpeg_filters() -> bool:
+    """Check the resolved FFmpeg for the required hardware filters.
+
+    Returns:
+        True if nothing is missing, or if missing filters are only warned about
+        (local builds). False when filters are missing and the `CI` env var is set.
+    """
+    try:
+        ffmpeg_path = find_binary("ffmpeg")
+    except FileNotFoundError as e:
+        log.warning("Skipping filter check: %s", e)
+        return True
+    missing = find_missing_filters(ffmpeg_path, required_filters_for(sys.platform))
+    if not missing:
+        log.info("FFmpeg filter check passed (%s)", ffmpeg_path)
+        return True
+    if os.environ.get("CI"):
+        log.error("FFmpeg is missing required filters: %s", ", ".join(missing))
+        return False
+    log.warning("FFmpeg is missing filters (hardware pipelines will fall back): %s", ", ".join(missing))
+    return True
+
+
+def resolve_build_version() -> str:
+    """Return the version to embed in executables.
+
+    Uses `BUILD_VERSION` (the release tag in CI, leading `v` removed), then the
+    installed package metadata, then `dev`.
+
+    Example:
+        >>> isinstance(resolve_build_version(), str)
+        True
+    """
+    tag = os.environ.get("BUILD_VERSION", "").strip().lstrip("vV")
+    if tag:
+        return tag
+    try:
+        return importlib.metadata.version("video-compression")
+    except importlib.metadata.PackageNotFoundError:
+        return "dev"
+
+
+def create_preset_script(target_mb: int, codec: str, temp_dir: str, app_version: str) -> str:
+    """Create a temporary script wrapper with hardcoded preset parameters and version.
+
+    Args:
+        target_mb: Preset target size in megabytes.
+        codec: Preset codec (`hevc` or `h264`).
+        temp_dir: Directory to write the wrapper into.
+        app_version: Version embedded into the executable for logs and error reports.
+
+    Returns:
+        Path to the generated wrapper script.
+    """
     content = f'''import sys
 import videocompress
+import videocompress.version
 
 # Preset Wrapper: {target_mb}mb-{codec}
+videocompress.version.BUILD_VERSION = {app_version!r}
 sys.argv[1:1] = ["{codec}", "{target_mb}"]
 try:
     videocompress.main()
@@ -286,7 +617,7 @@ VSVersionInfo(
             StringStruct('FileDescription', '{file_description}'),
             StringStruct('FileVersion', '{version_str}'),
             StringStruct('InternalName', '{output_name}'),
-            StringStruct('LegalCopyright', 'Copyright (c) 2026 SimpNick6703. Licensed under GPL-3.0.'),
+            StringStruct('LegalCopyright', 'Copyright (c) 2026 SimpNick6703. Licensed under GPL-3.0-or-later.'),
             StringStruct('OriginalFilename', '{output_name}.exe'),
             StringStruct('ProductName', 'Video-Compression'),
             StringStruct('ProductVersion', '{version_str}')
@@ -390,7 +721,8 @@ def clean_build_artifacts(include_ffmpeg: bool = False):
     files_to_remove = list(Path(".").glob("*.spec"))
     
     if include_ffmpeg:
-        # Also remove downloaded FFmpeg binaries if explicitly requested
+        # Also remove downloaded FFmpeg binaries and their license files if explicitly requested
+        dirs_to_remove.append(FFMPEG_NOTICES_DIR)
         for binary in FFMPEG_BINARIES:
             if sys.platform == "win32":
                 files_to_remove.append(Path(f"{binary}.exe"))
@@ -421,19 +753,24 @@ def main() -> int:
     if check_root_ffmpeg_present():
         log.info("FFmpeg and FFprobe already present in root folder (skipping download)")
     else:
-        log.info("FFmpeg binaries not found in root folder. Downloading from %s/releases/%s...", FFMPEG_REPO, FFMPEG_RELEASE_TAG)
-        if not download_ffmpeg():
+        ffmpeg_tag = resolve_ffmpeg_release_tag()
+        log.info("FFmpeg binaries not found in root folder. Downloading from %s/releases/%s...", FFMPEG_REPO, ffmpeg_tag)
+        if not download_ffmpeg(ffmpeg_tag):
             if all(shutil.which(b) for b in FFMPEG_BINARIES):
                 log.warning("Download failed, but found FFmpeg in system PATH. Continuing with PATH fallback...")
             else:
                 log.error("Failed to obtain FFmpeg binaries")
                 return 1
     
+    if not verify_ffmpeg_filters():
+        return 1
+
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
     # Build each preset
-    log.info("Building presets: %s", PRESET_SIZES)
+    app_version = resolve_build_version()
+    log.info("Building presets: %s (version %s)", PRESET_SIZES, app_version)
     results: dict[str, bool] = {}
     
     try:
@@ -449,7 +786,7 @@ def main() -> int:
                         os.makedirs(task_work, exist_ok=True)
                         os.makedirs(task_config, exist_ok=True)
                         
-                        script_path = create_preset_script(size, codec, task_dir)
+                        script_path = create_preset_script(size, codec, task_dir, app_version)
                         future = executor.submit(build_executable, script_path, size, codec, task_work, task_config) # type: ignore
                         futures[future] = f"{size}mb-{codec}"
                 
@@ -478,7 +815,8 @@ def main() -> int:
     if failed:
         log.error("Failed builds: %s", failed)
         return 1
-    
+
+    write_release_notices(app_version)
     log.info("All executables written to: %s/", OUTPUT_DIR)
     return 0
 

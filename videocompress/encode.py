@@ -10,11 +10,12 @@ Provides:
 import os
 import sys
 import time
+import shlex
 import tempfile
 import subprocess
 import logging
 from pathlib import Path
-from typing import Tuple, Optional, Sequence
+from typing import Callable, Tuple, Optional
 
 from rich.rule import Rule
 
@@ -29,9 +30,14 @@ from videocompress.core import (
     get_optimal_settings,
     select_best_encoder,
     build_single_pass_cmd,
+    build_concat_cmd,
+    check_bsf_available,
+    probe_pipeline_tier,
+    resolve_vaapi_node,
     calculate_video_bitrate,
     calculate_split_bitrates,
 )
+from videocompress.hwpipeline import Tier
 from videocompress.progress import (
     console,
     show_encoder_detection,
@@ -58,6 +64,8 @@ def _encode_hw_split(
     src_h: int,
     opt_h: int,
     opt_fps: float,
+    tier: Tier = Tier.LEGACY,
+    vaapi_node: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Execute parallel split single-pass encoding for hardware encoders.
 
@@ -75,6 +83,8 @@ def _encode_hw_split(
         src_h: Source height in pixels.
         opt_h: Target height for scaling.
         opt_fps: Target frames per second.
+        tier: Hardware pipeline tier used for both segment commands.
+        vaapi_node: Optional VA-API render node.
 
     Returns:
         Tuple of (success flag, error message).
@@ -103,6 +113,8 @@ def _encode_hw_split(
                 tgt_h=opt_h,
                 tgt_fps=opt_fps,
                 audio_kbps=audio_kbps,
+                tier=tier,
+                vaapi_node=vaapi_node,
             )
             cmd_b = build_single_pass_cmd(
                 ffmpeg_exe=ffmpeg_exe,
@@ -118,8 +130,13 @@ def _encode_hw_split(
                 tgt_h=opt_h,
                 tgt_fps=opt_fps,
                 audio_kbps=audio_kbps,
+                tier=tier,
+                vaapi_node=vaapi_node,
             )
 
+            log.debug("Segment bitrates: %s kbps (split at %.3f s)", brs, split_time)
+            log.debug("Segment A command: %s", shlex.join(cmd_a))
+            log.debug("Segment B command: %s", shlex.join(cmd_b))
             clean_env = get_clean_env()
             pa = subprocess.Popen(cmd_a, stderr=subprocess.PIPE, text=True, bufsize=1, env=clean_env)
             pb = subprocess.Popen(cmd_b, stderr=subprocess.PIPE, text=True, bufsize=1, env=clean_env)
@@ -137,14 +154,17 @@ def _encode_hw_split(
             with console.status("[bold cyan]  Stitching segments...", spinner="dots"):
                 with open(list_path, "w", encoding="utf-8") as lf:
                     lf.write(f"file '{p1_path}'\nfile '{p2_path}'")
+                concat_cmd = build_concat_cmd(
+                    ffmpeg_exe, list_path, output_path,
+                    annexb_available=check_bsf_available("h264_mp4toannexb"),
+                )
+                log.debug("Stitch command: %s", shlex.join(concat_cmd))
                 subprocess.run(
-                    [
-                        ffmpeg_exe, "-f", "concat", "-safe", "0", "-i", list_path,
-                        "-c", "copy", "-movflags", "+faststart", "-y", output_path
-                    ],
+                    concat_cmd,
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
+                    text=True,
                     env=clean_env,
                 )
             console.print()
@@ -153,7 +173,12 @@ def _encode_hw_split(
         except KeyboardInterrupt:
             console.print("\n[bold red]Cancelling...[/]")
             raise
+        except subprocess.CalledProcessError as e:
+            reason = (e.stderr or "").strip() or f"exit code {e.returncode}"
+            log.error("Stitching segments failed (exit code %s): %s", e.returncode, reason)
+            return False, f"Stitching segments failed: {reason.splitlines()[-1]}"
         except Exception as e:
+            log.exception("Split encode error")
             return False, f"Split single-pass error: {e}"
         finally:
             for p in (pa, pb):
@@ -163,6 +188,32 @@ def _encode_hw_split(
                         p.wait(timeout=1.0)
                     except Exception:
                         pass
+
+
+def _encode_hw_with_fallback(
+    attempt: Callable[[Tier], Tuple[bool, str]],
+    tier: Tier,
+) -> Tuple[bool, str, Tier]:
+    """Run a hardware encode attempt, retrying once with the legacy pipeline.
+
+    Args:
+        attempt: Callable running the split encode for a given tier.
+        tier: Pipeline tier selected by probing.
+
+    Returns:
+        Tuple of (success flag, error message, tier that produced the result).
+
+    Example:
+        >>> _encode_hw_with_fallback(lambda t: (True, ""), Tier.LEGACY)
+        (True, '', <Tier.LEGACY: 'legacy'>)
+    """
+    ok, err = attempt(tier)
+    if ok or tier is Tier.LEGACY:
+        return ok, err, tier
+    log.debug("%s pipeline encode failed: %s", tier.label, err)
+    console.print(f"[yellow]  {tier.label} pipeline failed, retrying with the legacy pipeline...[/]\n")
+    ok, err = attempt(Tier.LEGACY)
+    return ok, err, Tier.LEGACY
 
 
 def _encode_cpu_single(
@@ -223,6 +274,8 @@ def _encode_cpu_single(
             tgt_fps=opt_fps,
             audio_kbps=audio_kbps,
         )
+        log.debug("Bitrate: %s kbps", bitrate_k)
+        log.debug("Encode command: %s", shlex.join(cmd))
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -240,7 +293,7 @@ def _encode_cpu_single(
         console.print("\n[bold red]Cancelling...[/]")
         return False, "Cancelled by user"
     except Exception as e:
-        log.error(f"CPU single-pass encode error: {e}")
+        log.exception("CPU single-pass encode error")
         return False, f"CPU encode error: {e}"
     finally:
         if process and process.poll() is None:
@@ -295,6 +348,7 @@ def compress_video(
 
     # Decision Algorithm: Optimize Resolution and FPS
     opt_h, opt_fps = get_optimal_settings(target_size_mb, duration, src_w, src_h, fps)
+    log.debug("Target: %s MB %s -> %sp @ %s fps", target_size_mb, codec_type, opt_h, opt_fps)
     if opt_h != src_h or opt_fps != fps:
         opt_w = int(opt_h * (src_w / src_h))
         opt_w = opt_w if opt_w % 2 == 0 else opt_w + 1
@@ -305,32 +359,43 @@ def compress_video(
 
     # Encoder Selection
     active_encoder, detection_results = select_best_encoder(codec_type)
+    log.debug("Encoder detection: %s", ", ".join(f"{enc}={status}" for enc, status in detection_results))
     show_encoder_detection(detection_results)
 
     split_info: Optional[str] = None
 
     # Branch 1: Hardware Encoders (Parallel Split Single-Pass)
     if active_encoder not in ("libx265", "libx264"):
+        vaapi_node = resolve_vaapi_node(active_encoder) if "vaapi" in active_encoder else None
+        tier = probe_pipeline_tier(
+            ffmpeg_exe, input_path, active_encoder, codec_type,
+            src_h, opt_h, fps, opt_fps, vaapi_node,
+        )
         split_time = get_smart_split_point(input_path, duration)
         durs_tuple = (split_time, duration - split_time)
         split_info = f"{durs_tuple[0]:.1f}s + {durs_tuple[1]:.1f}s"
-        mode_str = "parallel split"
 
-        ok, err = _encode_hw_split(
-            ffmpeg_exe=ffmpeg_exe,
-            input_path=input_path,
-            output_path=output_path,
-            active_encoder=active_encoder,
-            codec_type=codec_type,
-            target_size_mb=target_size_mb,
-            split_time=split_time,
-            durs=durs_tuple,
-            audio_kbps=audio_kbps,
-            fps=fps,
-            src_h=src_h,
-            opt_h=opt_h,
-            opt_fps=opt_fps,
+        ok, err, tier = _encode_hw_with_fallback(
+            lambda t: _encode_hw_split(
+                ffmpeg_exe=ffmpeg_exe,
+                input_path=input_path,
+                output_path=output_path,
+                active_encoder=active_encoder,
+                codec_type=codec_type,
+                target_size_mb=target_size_mb,
+                split_time=split_time,
+                durs=durs_tuple,
+                audio_kbps=audio_kbps,
+                fps=fps,
+                src_h=src_h,
+                opt_h=opt_h,
+                opt_fps=opt_fps,
+                tier=t,
+                vaapi_node=vaapi_node,
+            ),
+            tier,
         )
+        mode_str = f"parallel split \u00b7 {tier.label}"
         if not ok:
             clean_log_file()
             return False, err
