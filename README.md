@@ -13,7 +13,9 @@ Most users do not want to configure encoders or calculate bitrates manually—th
 
 **Video-Compression** provides zero-config, drag-and-drop standalone executables for Windows, Linux, and macOS. Simply drop your video file onto your chosen target preset to compress it directly for Discord.
 
-https://github.com/user-attachments/assets/51b49444-f143-4426-884f-b7e8b4957669
+
+https://github.com/user-attachments/assets/a6dfe650-9bcb-4e02-b9d6-36e6b105639e
+
 
 ### Discord Preset Tiers
 
