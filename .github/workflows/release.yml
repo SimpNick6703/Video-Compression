@@ -32,6 +32,12 @@ jobs:
       - name: Install Dependencies
         run: pip install rich pyinstaller
 
+      - name: Install FFmpeg Runtime Libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libva2 libva-drm2 libdrm2
+
       - name: Build Executables
         env:
           BUILD_VERSION: ${{ github.ref_name }}

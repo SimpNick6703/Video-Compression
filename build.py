@@ -468,6 +468,10 @@ def find_missing_filters(ffmpeg_path: str, required: tuple[str, ...]) -> list[st
             [ffmpeg_path, "-hide_banner", "-filters"],
             capture_output=True, text=True, check=True, timeout=FILTER_CHECK_TIMEOUT_S,
         )
+    except subprocess.CalledProcessError as e:
+        log.warning("Could not list FFmpeg filters from %s (exit %d): %s",
+                    ffmpeg_path, e.returncode, (e.stderr or "").strip() or "no error output")
+        return list(required)
     except (subprocess.SubprocessError, OSError) as e:
         log.warning("Could not list FFmpeg filters from %s: %s", ffmpeg_path, e)
         return list(required)
