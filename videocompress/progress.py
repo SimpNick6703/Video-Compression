@@ -12,6 +12,7 @@ import sys
 import time
 import threading
 import logging
+import subprocess
 from collections import deque
 from typing import List, Tuple, Optional
 
@@ -444,6 +445,7 @@ def show_encoder_detection(results: List[Tuple[str, str]]) -> None:
     console.print()
 
 
+
 def run_dual_progress(
     proc_a: "subprocess.Popen[str]",
     proc_b: "subprocess.Popen[str]",
@@ -467,8 +469,6 @@ def run_dual_progress(
     Returns:
         True if both processes exited with code 0.
     """
-    import subprocess as _sp  # for type only, already imported at module scope indirectly
-
     tracker = ProgressTracker(dur_a, dur_b)
     tracker.bitrate_a = bitrate_a
     tracker.bitrate_b = bitrate_b
@@ -525,6 +525,10 @@ def run_dual_progress(
 
     if failed or proc_a.returncode != 0 or proc_b.returncode != 0:
         err_msg = "\n".join(list(error_buffer)[-10:])
+        log.error(
+            "Split encode failed (segment A exit %s, segment B exit %s):\n%s",
+            proc_a.returncode, proc_b.returncode, "\n".join(error_buffer) or "(no FFmpeg output)",
+        )
         if err_msg:
             console.print(f"[bold red]FFmpeg Error Details:[/]\n[dim]{err_msg}[/]\n")
         return False
@@ -578,6 +582,10 @@ def run_single_progress(
 
     if failed or process.returncode != 0:
         err_msg = "\n".join(list(error_buffer)[-10:])
+        log.error(
+            "Encode failed (exit %s):\n%s",
+            process.returncode, "\n".join(error_buffer) or "(no FFmpeg output)",
+        )
         if err_msg:
             console.print(f"[bold red]FFmpeg Error Details:[/]\n[dim]{err_msg}[/]\n")
         return False
@@ -607,7 +615,7 @@ def show_result_panel(
         split_info: Optional split durations string (e.g., "65.0s + 55.0s").
         quality_info: Optional quality/resolution string (e.g., "1080p60 -> 720p60 (scaled)").
     """
-    from videocompress.core import format_size, MB_TO_BYTES
+    from videocompress.core import MB_TO_BYTES
 
     console.print(Rule("[bold green]Result[/]", style="green"))
     console.print()

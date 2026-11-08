@@ -9,52 +9,64 @@ document.addEventListener('DOMContentLoaded', () => {
     const navBtns = document.querySelectorAll('.nav-btn');
     const sections = document.querySelectorAll('.content-section');
 
-    navBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            navBtns.forEach(b => {
-                b.classList.remove('tab-active');
-                b.classList.add('text-slate-400');
-            });
-            btn.classList.add('tab-active');
-            btn.classList.remove('text-slate-400');
-
-            sections.forEach(sec => sec.classList.add('hidden-section'));
-            const target = document.getElementById(btn.dataset.target);
-            if(target) {
-                target.classList.remove('hidden-section');
-            }
+    function showSection(sectionId) {
+        navBtns.forEach(b => {
+            const isMatch = b.dataset.target === sectionId;
+            b.classList.toggle('tab-active', isMatch);
+            b.classList.toggle('text-slate-400', !isMatch);
         });
+        sections.forEach(sec => sec.classList.toggle('hidden-section', sec.id !== sectionId));
+    }
+
+    navBtns.forEach(btn => {
+        btn.addEventListener('click', () => showSection(btn.dataset.target));
     });
+
+    // Deep links (e.g. #sec-comparison-matrix) open the tab that contains the target.
+    function revealHashTarget() {
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        const target = id ? document.getElementById(id) : null;
+        const section = target ? target.closest('.content-section') : null;
+        if(!section) return;
+        if(section.classList.contains('hidden-section')) showSection(section.id);
+        requestAnimationFrame(() => target.scrollIntoView());
+    }
+    window.addEventListener('hashchange', revealHashTarget);
 
     // --- Chart.js Initialization ---
-    Chart.defaults.color = '#94a3b8';
-    Chart.defaults.font.family = "'JetBrains Mono', monospace";
-    
-    const ctx = document.getElementById('encodeChart').getContext('2d');
-    encodeChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Serial', 'Parallel'],
-            datasets: [
-                { label: 'Chunk 1', data: [240, 60], backgroundColor: '#06b6d4', barThickness: 40 },
-                { label: 'Chunk 2', data: [0, 60], backgroundColor: '#8b5cf6', barThickness: 40 },
-                { label: 'Stitch Overhead', data: [0, 5], backgroundColor: '#d946ef', barThickness: 40 }
-            ]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom' },
-                tooltip: { callbacks: { label: (c) => c.dataset.label } }
-            },
-            scales: {
-                x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { display: false } },
-                y: { stacked: true, grid: { display: false } }
-            }
+    if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'JetBrains Mono', monospace";
+        
+        const chartCanvas = document.getElementById('encodeChart');
+        if (chartCanvas) {
+            const ctx = chartCanvas.getContext('2d');
+            encodeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Serial', 'Parallel'],
+                    datasets: [
+                        { label: 'Chunk 1', data: [240, 60], backgroundColor: '#06b6d4', barThickness: 40 },
+                        { label: 'Chunk 2', data: [0, 60], backgroundColor: '#8b5cf6', barThickness: 40 },
+                        { label: 'Stitch Overhead', data: [0, 5], backgroundColor: '#d946ef', barThickness: 40 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: { callbacks: { label: (c) => c.dataset.label } }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { display: false } },
+                        y: { stacked: true, grid: { display: false } }
+                    }
+                }
+            });
         }
-    });
+    }
 
     // --- BPP Calculator Logic ---
     const MIN_BPP = 0.04;
@@ -227,11 +239,11 @@ document.addEventListener('DOMContentLoaded', () => {
             nodes: { storage: true, host: true, pcie: true, gpu: true }
         },
         downscaled: {
-            title: "Hardware Downscaled (720p60 Hybrid)",
+            title: "Hardware Downscaled (Legacy 720p60 Hybrid)",
             badge: "PCIe Roundtrip Path",
             badgeClass: "bg-amber-900/40 text-amber-400 border-amber-500/40",
-            note: "Decoded on NVDEC, downloaded to Host RAM for CPU Lanczos scaling, and uploaded back to NVENC.",
-            summary: "NVDEC decompresses 1080p frames in VRAM. Because standard scale is a CPU software filter (libswscale), FFmpeg automatically downloads decoded frames across PCIe to Host System RAM (~44 GB D2H). The CPU runs Lanczos scaling on the host, and uploads 720p frames across PCIe back to NVENC (~19 GB H2D) for encoding.",
+            note: "Legacy v1.1.6 hybrid pipeline: decoded on NVDEC, downloaded to Host RAM for CPU Lanczos scaling, and uploaded back to NVENC.",
+            summary: "Legacy v1.1.6 hybrid pipeline (CPU swscale roundtrip): NVDEC decompresses 1080p frames in VRAM. Because standard scale is a CPU software filter (libswscale), FFmpeg automatically downloads decoded frames across PCIe to Host System RAM (~44 GB D2H). The CPU runs Lanczos scaling on the host, and uploads 720p frames across PCIe back to NVENC (~19 GB H2D) for encoding.",
             pcie: "~64.4 GB Total",
             pcieSub: "44.2 GB D2H + 19.6 GB H2D",
             pixfmt: "pix_fmt: nv12",
@@ -271,11 +283,11 @@ document.addEventListener('DOMContentLoaded', () => {
             nodes: { storage: true, host: true, pcie: false, gpu: false }
         },
         zerocopy: {
-            title: "Zero-Copy GPU Target (scale_cuda Architecture)",
-            badge: "100% VRAM Resident",
+            title: "Zero-Copy GPU Active (all-GPU scaling, CUDA example)",
+            badge: "Current Implementation",
             badgeClass: "bg-emerald-900/40 text-emerald-400 border-emerald-500/40",
-            note: "Decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
-            summary: "The target hardware pipeline using scale_cuda=-2:H:interp_algo=lanczos. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
+            note: "Active current pipeline: decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
+            summary: "The active current hardware pipeline, shown here for NVIDIA with -hwaccel cuda -hwaccel_output_format cuda and scale_cuda=-2:H:interp_algo=lanczos. Other backends follow the same shape with their native scaler (scale_vaapi, vpp_amf, vpp_qsv, scale_vt) and fall back automatically to an upload tier or the legacy path when an input cannot be decoded in hardware. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
             pcie: "~545 MB Total",
             pcieSub: "True Zero-Copy Pipeline",
             pixfmt: "pix_fmt: cuda",
@@ -304,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if(titleEl) titleEl.textContent = p.title;
         if(badgeEl) {
-            badgeEl.className = `text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 border ${p.badgeClass}`;
+            badgeEl.className = `df-chip ${p.badgeClass}`;
             badgeEl.textContent = p.badge;
         }
         if(noteEl) noteEl.textContent = p.note;
@@ -358,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(h2dVol) h2dVol.textContent = p.h2dVol;
         if(d2hVol) d2hVol.textContent = p.d2hVol;
         if(busStat) {
-            busStat.className = p.busStatusClass;
+            busStat.className = `df-chip ${p.busStatusClass}`;
             busStat.textContent = p.busStatus;
         }
     }
@@ -370,74 +382,96 @@ document.addEventListener('DOMContentLoaded', () => {
     const cardPath3 = document.getElementById('schematic-card-path3');
     const schematicContainer = document.getElementById('schematic-cards-container');
 
+    const schematicViews = {
+        path1: [cardPath1],
+        path2: [cardPath2],
+        path3: [cardPath3],
+        compare: [cardPath2, cardPath3],
+        all: [cardPath1, cardPath2, cardPath3],
+    };
+
     function setSchematicView(viewKey) {
+        const visible = schematicViews[viewKey] || schematicViews.path3;
         schematicBtns.forEach(btn => {
             const isMatch = btn.dataset.schematic === viewKey;
             btn.classList.toggle('schematic-btn-active', isMatch);
-            btn.classList.toggle('text-slate-400', !isMatch);
-            btn.classList.remove('text-amber-400', 'text-emerald-400', 'text-cyan-400', 'text-purple-400', 'text-white');
-            if(isMatch) {
-                if(viewKey === 'all') btn.classList.add('text-white');
-                if(viewKey === 'path1' || viewKey === 'cpu') btn.classList.add('text-purple-400');
-                if(viewKey === 'path2' || viewKey === 'hybrid') btn.classList.add('text-amber-400');
-                if(viewKey === 'path3' || viewKey === 'zerocopy') btn.classList.add('text-emerald-400');
-                if(viewKey === 'compare') btn.classList.add('text-cyan-400');
-            }
+            btn.setAttribute('aria-pressed', String(isMatch));
         });
-
-        // Hide all cards first
         [cardPath1, cardPath2, cardPath3].forEach(card => {
-            if(card) card.classList.add('hidden');
+            if(card) card.classList.toggle('hidden', !visible.includes(card));
         });
-
         if(schematicContainer) {
-            schematicContainer.classList.remove('lg:grid', 'lg:grid-cols-2', 'gap-6');
-        }
-
-        if(viewKey === 'all') {
-            if(cardPath1) cardPath1.classList.remove('hidden');
-            if(cardPath2) cardPath2.classList.remove('hidden');
-            if(cardPath3) cardPath3.classList.remove('hidden');
-        } else if(viewKey === 'path1' || viewKey === 'cpu') {
-            if(cardPath1) cardPath1.classList.remove('hidden');
-        } else if(viewKey === 'path2' || viewKey === 'hybrid') {
-            if(cardPath2) cardPath2.classList.remove('hidden');
-        } else if(viewKey === 'path3' || viewKey === 'zerocopy') {
-            if(cardPath3) cardPath3.classList.remove('hidden');
-        } else if(viewKey === 'compare') {
-            if(cardPath2) cardPath2.classList.remove('hidden');
-            if(cardPath3) cardPath3.classList.remove('hidden');
-            if(schematicContainer) {
-                schematicContainer.classList.add('lg:grid', 'lg:grid-cols-2', 'gap-6');
-            }
+            schematicContainer.classList.toggle('schematic-compare', viewKey === 'compare');
         }
     }
 
     schematicBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            setSchematicView(btn.dataset.schematic);
-        });
+        btn.addEventListener('click', () => setSchematicView(btn.dataset.schematic));
     });
 
-    document.querySelectorAll('.df-mode-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-            const b = e.target.closest('button');
-            if(!b) return;
-            document.querySelectorAll('.df-mode-btn').forEach(x => {
-                x.classList.remove('mode-btn-active');
+    const modeBtns = document.querySelectorAll('.df-mode-btn');
+    modeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            modeBtns.forEach(x => {
+                const isActive = x === btn;
+                x.classList.toggle('mode-btn-active', isActive);
+                x.setAttribute('aria-pressed', String(isActive));
             });
-            b.classList.add('mode-btn-active');
-            renderDataflowMode(b.dataset.mode);
-
-            if(b.dataset.mode === 'downscaled') {
-                setSchematicView('path2');
-            } else if(b.dataset.mode === 'zerocopy' || b.dataset.mode === 'unscaled') {
-                setSchematicView('path3');
-            } else if(b.dataset.mode === 'cpu') {
-                setSchematicView('path1');
-            }
+            renderDataflowMode(btn.dataset.mode);
         });
     });
 
     renderDataflowMode('unscaled');
+
+    // --- Dataflow sub-navigation: highlight the block currently in view ---
+    const subnavList = document.querySelector('.df-subnav-list');
+    const subnavLinks = Array.from(document.querySelectorAll('.df-subnav-link'));
+    const subnavBlocks = subnavLinks
+        .map(link => document.getElementById(link.hash.slice(1)))
+        .filter(Boolean);
+
+    function setCurrentBlock(id) {
+        subnavLinks.forEach(link => {
+            const isCurrent = link.hash === `#${id}`;
+            if(isCurrent) {
+                link.setAttribute('aria-current', 'location');
+                if(subnavList && subnavList.scrollWidth > subnavList.clientWidth) {
+                    subnavList.scrollTo({ left: Math.max(0, link.offsetLeft - 16) });
+                }
+            } else {
+                link.removeAttribute('aria-current');
+            }
+        });
+    }
+
+    // The current block is the last one whose top has passed 35% of the viewport.
+    function updateCurrentBlock() {
+        const dataflow = document.getElementById('sec-dataflow');
+        if(!subnavBlocks.length || !dataflow || dataflow.classList.contains('hidden-section')) return;
+        const marker = window.innerHeight * 0.35;
+        const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        const passed = subnavBlocks.filter(block => block.getBoundingClientRect().top <= marker);
+        const current = atBottom ? subnavBlocks[subnavBlocks.length - 1] : (passed[passed.length - 1] || subnavBlocks[0]);
+        setCurrentBlock(current.id);
+    }
+
+    let subnavFrame = 0;
+    window.addEventListener('scroll', () => {
+        cancelAnimationFrame(subnavFrame);
+        subnavFrame = requestAnimationFrame(updateCurrentBlock);
+    }, { passive: true });
+    navBtns.forEach(btn => btn.addEventListener('click', () => requestAnimationFrame(updateCurrentBlock)));
+    updateCurrentBlock();
+
+    // Open the linked tab right away. Tailwind's CDN styles the page asynchronously, so
+    // re-align once on full load unless the reader has already started scrolling.
+    revealHashTarget();
+    if(document.readyState !== 'complete') {
+        let readerMoved = false;
+        const markMoved = () => { readerMoved = true; };
+        ['wheel', 'touchstart', 'keydown'].forEach(evt => window.addEventListener(evt, markMoved, { once: true, passive: true }));
+        window.addEventListener('load', () => {
+            if(!readerMoved) revealHashTarget();
+        }, { once: true });
+    }
 });

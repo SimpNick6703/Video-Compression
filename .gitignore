@@ -9,3 +9,10 @@ __pycache__/
 *.pyc
 *.pyo
 ffmpeg-minimal-builds/
+
+# Test and packaging artifacts
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+ffmpeg-licenses/

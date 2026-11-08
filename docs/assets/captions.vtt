@@ -1,0 +1,19 @@
+WEBVTT - Video-Compression Drag & Drop Demonstration
+
+00:00.000 --> 00:03.000
+Dragging and dropping a high-bitrate video file onto the target preset executable.
+
+00:03.000 --> 00:07.000
+Automated video analysis initiates: probing duration, frame rate, resolution, and audio stream.
+
+00:07.000 --> 00:12.000
+Hardware encoder detection selects the fastest available GPU encoder with automatic fallback.
+
+00:12.000 --> 00:18.000
+Smart split point analysis divides workload into keyframe-aligned segments for parallel processing.
+
+00:18.000 --> 00:25.000
+Dual-worker Rich TUI displays real-time progress, encoding FPS, bitrate, and time remaining.
+
+00:25.000 --> 00:30.000
+Lossless concatenation stitches segments with faststart progressive streaming flags.

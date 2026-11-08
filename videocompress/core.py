@@ -9,8 +9,11 @@ import math
 import json
 import logging
 import shutil
+from functools import lru_cache
 from pathlib import Path
-from typing import Tuple, Optional, List, Sequence
+from typing import Tuple, Optional, List, Sequence, Mapping
+
+from videocompress.hwpipeline import Tier, backend_for_encoder, build_video_args
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +23,14 @@ MB_TO_BITS = 8 * 1024 * 1024
 BITRATE_SAFETY_FACTOR = 0.90
 MIN_BPP = 0.04  # Target Bits Per Pixel threshold
 LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"]
+
+DRI_DIR = Path("/dev/dri")
+DRM_SYSFS_DIR = Path("/sys/class/drm")
+VENDOR_NVIDIA = "0x10de"
+VENDOR_PRIORITY = {"0x1002": 0, "0x8086": 1}
+VAAPI_NODE_TIMEOUT_S = 10
+PIPELINE_PROBE_TIMEOUT_S = 20
+PIPELINE_PROBE_TIERS = (Tier.ZERO_COPY, Tier.UPLOAD)
 
 ENCODER_PRIORITY = {
     "hevc": {
@@ -245,6 +256,119 @@ def calculate_split_bitrates(target_mb: float, durations: Sequence[float], audio
 
 # --- Encoder Detection ---
 
+def rank_render_nodes(vendors: Mapping[str, str]) -> List[str]:
+    """Order DRM render nodes by vendor preference, dropping NVIDIA.
+
+    AMD comes first, then Intel, then any other vendor. Order within a vendor
+    follows the node name.
+
+    Args:
+        vendors: Mapping of render node path to its sysfs vendor id (e.g. `0x8086`).
+
+    Returns:
+        Candidate node paths, best first.
+
+    Examples:
+        >>> rank_render_nodes({"/dev/dri/renderD128": "0x8086", "/dev/dri/renderD129": "0x1002",
+        ...                    "/dev/dri/renderD130": "0x10de"})
+        ['/dev/dri/renderD129', '/dev/dri/renderD128']
+    """
+    usable = [(node, vendor) for node, vendor in vendors.items() if vendor != VENDOR_NVIDIA]
+    ranked = sorted(usable, key=lambda nv: (VENDOR_PRIORITY.get(nv[1], len(VENDOR_PRIORITY)), nv[0]))
+    return [node for node, _ in ranked]
+
+
+def _read_render_vendors() -> dict[str, str]:
+    """Map each `/dev/dri/renderD*` node to its sysfs vendor id.
+
+    Returns:
+        Dictionary of node path to vendor id; empty when no render node exists.
+    """
+    vendors: dict[str, str] = {}
+    try:
+        nodes = sorted(DRI_DIR.glob("renderD*"))
+    except OSError as e:
+        log.debug("Could not list %s: %s", DRI_DIR, e)
+        return vendors
+    for node in nodes:
+        vendor_file = DRM_SYSFS_DIR / node.name / "device" / "vendor"
+        try:
+            vendors[str(node)] = vendor_file.read_text().strip().lower()
+        except OSError as e:
+            log.debug("Could not read vendor for %s: %s", node, e)
+            vendors[str(node)] = ""
+    return vendors
+
+
+def _vaapi_probe_cmd(ffmpeg_exe: str, encoder_name: str, node: str) -> List[str]:
+    """Build a one-frame VA-API test encode command bound to a render node.
+
+    Example:
+        >>> "vaapi=va:/dev/dri/renderD128" in _vaapi_probe_cmd("ffmpeg", "hevc_vaapi", "/dev/dri/renderD128")
+        True
+    """
+    return [
+        ffmpeg_exe, "-hide_banner", "-v", "error",
+        "-init_hw_device", f"vaapi=va:{node}", "-filter_hw_device", "va",
+        "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1",
+        "-vframes", "1", "-vf", "format=nv12,hwupload", "-c:v", encoder_name,
+        "-f", "null", "-",
+    ]
+
+
+def _run_probe(cmd: List[str], timeout: float, label: str) -> bool:
+    """Run a probe command; True on exit code 0, False on any specific failure.
+
+    Args:
+        cmd: Command to run.
+        timeout: Seconds before the probe is abandoned.
+        label: Short description used in debug logging.
+    """
+    try:
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            text=True, timeout=timeout, env=get_clean_env(),
+        )
+        return True
+    except subprocess.TimeoutExpired:
+        log.debug("%s probe timed out after %ss", label, timeout)
+    except subprocess.CalledProcessError as e:
+        tail = (e.stderr or "").strip().splitlines()[-10:]
+        log.debug("%s probe failed with exit code %s:\n%s", label, e.returncode, "\n".join(tail))
+    except OSError as e:
+        log.debug("%s probe error: %s", label, e)
+    return False
+
+
+@lru_cache(maxsize=4)
+def resolve_vaapi_node(encoder_name: str) -> Optional[str]:
+    """Pick the VA-API render node used for both detection and encoding.
+
+    Candidates are `/dev/dri/renderD*` ordered by vendor (AMD, Intel, others;
+    NVIDIA skipped). The first node where `encoder_name` completes a test encode
+    wins, so H.264-only GPUs still resolve a node for `h264_vaapi`.
+
+    Args:
+        encoder_name: VA-API encoder to validate (e.g., `h264_vaapi`).
+
+    Returns:
+        The render node path, or None when not on Linux or no node works.
+
+    Example:
+        >>> node = resolve_vaapi_node("hevc_vaapi")
+        >>> node is None or node.startswith("/dev/dri/")
+        True
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+    ffmpeg_exe = get_resource_path("ffmpeg")
+    for node in rank_render_nodes(_read_render_vendors()):
+        if _run_probe(_vaapi_probe_cmd(ffmpeg_exe, encoder_name, node), VAAPI_NODE_TIMEOUT_S, f"{encoder_name} on {node}"):
+            log.debug("VA-API render node for %s: %s", encoder_name, node)
+            return node
+    return None
+
+
 def check_encoder_available(encoder_name: str) -> bool:
     """Check if a specific FFmpeg encoder can be used.
 
@@ -255,16 +379,13 @@ def check_encoder_available(encoder_name: str) -> bool:
         True if a short test encode succeeds, else False.
     """
     ffmpeg_exe = get_resource_path("ffmpeg")
+    if "vaapi" in encoder_name:
+        return resolve_vaapi_node(encoder_name) is not None
+
+    cmd = [ffmpeg_exe, "-hide_banner", "-v", "error",
+           "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1",
+           "-vframes", "1", "-c:v", encoder_name, "-f", "null", "-"]
     try:
-        is_vaapi = "vaapi" in encoder_name
-        vf_args = ["-vf", "format=nv12,hwupload"] if is_vaapi else []
-        pre_args = ["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"] if is_vaapi else []
-
-        cmd = [ffmpeg_exe, "-hide_banner", "-v", "error"] + pre_args + [
-            "-f", "lavfi", "-i", "color=c=black:s=1280x720:r=1:d=0.1",
-            "-vframes", "1", "-c:v", encoder_name
-        ] + vf_args + ["-f", "null", "-"]
-
         subprocess.run(
             cmd,
             check=True,
@@ -367,6 +488,63 @@ def check_audio_encoder_available(encoder_name: str = "aac") -> bool:
         return False
 
 
+@lru_cache(maxsize=4)
+def check_bsf_available(bsf_name: str) -> bool:
+    """Check if a bitstream filter is compiled into the active FFmpeg binary.
+
+    Args:
+        bsf_name: Bitstream filter name (e.g., `h264_mp4toannexb`).
+
+    Returns:
+        True if the filter is listed by `ffmpeg -bsfs`, else False.
+
+    Example:
+        >>> isinstance(check_bsf_available("null"), bool)
+        True
+    """
+    ffmpeg_exe = get_resource_path("ffmpeg")
+    try:
+        res = subprocess.run(
+            [ffmpeg_exe, "-hide_banner", "-bsfs"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=get_clean_env(),
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.debug("Bitstream filter listing failed: %s", e)
+        return False
+    return bsf_name in (line.strip() for line in res.stdout.splitlines())
+
+
+def build_concat_cmd(ffmpeg_exe: str, list_path: str, output_path: str, annexb_available: bool) -> List[str]:
+    """Build the stream-copy command that stitches split segments.
+
+    The concat demuxer converts H.264 through `h264_mp4toannexb`, which also
+    tolerates differing parameter sets between segments. When the binary lacks
+    that filter, conversion is disabled so H.264 segments can still be joined.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        list_path: Concat list file naming the segments in order.
+        output_path: Destination video path.
+        annexb_available: Whether `h264_mp4toannexb` exists in the binary.
+
+    Returns:
+        A command list ready for subprocess execution.
+
+    Example:
+        >>> build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=False)[6:9]
+        ['-safe', '0', '-auto_convert']
+    """
+    convert_args = [] if annexb_available else ["-auto_convert", "0"]
+    return [
+        ffmpeg_exe, "-hide_banner", "-v", "error",
+        "-f", "concat", "-safe", "0", *convert_args, "-i", list_path,
+        "-c", "copy", "-movflags", "+faststart", "-y", output_path,
+    ]
+
+
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
     """Probe video metadata.
 
@@ -385,7 +563,8 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
             "-show_entries", "stream=width,height,avg_frame_rate",
             "-show_entries", "format=duration", "-of", "json", input_path
         ]
-        res = json.loads(subprocess.check_output(cmd, text=True, env=clean_env))
+        log.debug("ffprobe: %s", ffprobe_exe)
+        res = json.loads(subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=clean_env))
 
         v_stream = res['streams'][0]
         width = int(v_stream.get('width', 0))
@@ -418,8 +597,17 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
             audio_bps = 0
 
         audio_kbps = math.ceil(audio_bps / 1000) if audio_bps > 0 else 0
-        return float(dur_out), get_file_size(input_path), fps, audio_kbps, width, height
-    except (subprocess.CalledProcessError, ValueError, OSError, KeyError, IndexError):
+        info = (float(dur_out), get_file_size(input_path), fps, audio_kbps, width, height)
+        log.debug(
+            "Input: %dx%d @ %.3f fps, %.2f s, %d bytes, audio %d kbps",
+            width, height, fps, info[0], info[1], audio_kbps,
+        )
+        return info
+    except subprocess.CalledProcessError as e:
+        log.error("ffprobe failed on %s (exit code %s): %s", input_path, e.returncode, (e.stderr or "").strip())
+        return None
+    except (ValueError, OSError, KeyError, IndexError) as e:
+        log.error("Could not read video metadata from %s: %r", input_path, e)
         return None
 
 
@@ -469,7 +657,12 @@ def get_smart_split_point(input_path: str, duration: float) -> float:
         if total_bytes > 0 and keyframes:
             target_bytes = total_bytes / 2
             best_split = min(keyframes, key=lambda kf: abs(kf[1] - target_bytes))[0]
+            log.debug("Split point: %.3f s (%d keyframes, %d bytes)", best_split, len(keyframes), total_bytes)
             return best_split
+        log.debug(
+            "No usable keyframes (ffprobe exit %s, %d bytes); splitting at midpoint %.3f s",
+            proc.returncode, total_bytes, duration / 2,
+        )
     except Exception as e:
         log.warning("Smart split analysis failed (%s). Falling back to midpoint.", e)
 
@@ -549,6 +742,8 @@ def build_single_pass_cmd(
     tgt_h: int,
     tgt_fps: float,
     audio_kbps: int = 128,
+    tier: Tier = Tier.LEGACY,
+    vaapi_node: Optional[str] = None,
 ) -> List[str]:
     """Build a single-pass FFmpeg command for hardware encoders.
 
@@ -566,19 +761,21 @@ def build_single_pass_cmd(
         tgt_h: Target height for scaling. Set to 0 or equal to src_h to skip scaling.
         tgt_fps: Target frames per second. Set equal to src_fps to skip FPS conversion.
         audio_kbps: Probed audio bitrate in kbps (0 for silent video).
+        tier: Hardware pipeline tier; LEGACY reproduces the pre-v1.2 arguments.
+        vaapi_node: Optional VA-API render node (e.g., `/dev/dri/renderD128`).
 
     Returns:
         A command list ready for subprocess execution.
-    """
-    cmd: List[str] = [ffmpeg_exe, "-y"]
-    filters: List[str] = []
 
-    if "nvenc" in encoder:
-        cmd.extend(["-hwaccel", "cuda"])
-    elif "vaapi" in encoder:
-        cmd.extend(["-init_hw_device", "vaapi=va", "-filter_hw_device", "va"])
-    elif encoder not in ("libx265", "libx264"):
-        cmd.extend(["-hwaccel", "auto"])
+    Examples:
+        >>> cmd = build_single_pass_cmd("ffmpeg", "in.mp4", "hevc_nvenc", "hevc", 2000, 60.0, 1080, None, None, "out.mp4", 720, 60.0)
+        >>> "-hwaccel_output_format" in cmd
+        True
+    """
+    video = build_video_args(
+        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node
+    )
+    cmd: List[str] = [ffmpeg_exe, "-y", *video.pre_input]
 
     # Fast input seeking placed before -i
     if start is not None:
@@ -591,24 +788,9 @@ def build_single_pass_cmd(
     if start is not None or end is not None:
         cmd.extend(["-avoid_negative_ts", "make_zero"])
 
-    # Build Filters
-    if tgt_fps < src_fps:
-        filters.append(f"fps={tgt_fps}")
-
-    # Scale filter: only apply if target height differs from source
-    if tgt_h > 0 and tgt_h != src_h:
-        filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
-
-    # Format normalization & hardware surface handling
-    if "vaapi" in encoder:
-        filters.append("format=nv12,hwupload")
-        cmd.extend(["-vf", ",".join(filters)])
-    elif codec_type == "h264":
-        filters.append("format=yuv420p")
-        cmd.extend(["-vf", ",".join(filters)])
-    else:
-        if filters:
-            cmd.extend(["-vf", ",".join(filters)])
+    cmd.extend(video.post_input)
+    if video.filters:
+        cmd.extend(["-vf", ",".join(video.filters)])
 
     cmd.extend(["-c:v", encoder, "-b:v", f"{bitrate_k}k"])
 
@@ -671,3 +853,98 @@ def build_single_pass_cmd(
     ])
     return cmd
 
+
+
+# --- Pipeline Tier Probing ---
+
+def build_probe_cmd(
+    ffmpeg_exe: str,
+    input_path: str,
+    encoder: str,
+    codec_type: str,
+    tier: Tier,
+    src_h: int,
+    tgt_h: int,
+    src_fps: float,
+    tgt_fps: float,
+    vaapi_node: Optional[str] = None,
+) -> List[str]:
+    """Build a one-second null-output encode of the real input for one tier.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        input_path: Source video path.
+        encoder: FFmpeg encoder name.
+        codec_type: "hevc" or "h264".
+        tier: Pipeline tier to exercise.
+        src_h: Source height in pixels.
+        tgt_h: Target height for scaling.
+        src_fps: Source frames per second.
+        tgt_fps: Target frames per second.
+        vaapi_node: Optional VA-API render node.
+
+    Returns:
+        A command list ready for subprocess execution.
+
+    Examples:
+        >>> cmd = build_probe_cmd("ffmpeg", "in.mp4", "hevc_vaapi", "hevc", Tier.UPLOAD, 1080, 720, 60.0, 30.0)
+        >>> cmd[cmd.index("-t") + 1]
+        '1'
+    """
+    video = build_video_args(
+        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node
+    )
+    cmd: List[str] = [ffmpeg_exe, "-hide_banner", "-v", "error", *video.pre_input]
+    cmd.extend(["-t", "1", "-i", input_path, *video.post_input])
+    if video.filters:
+        cmd.extend(["-vf", ",".join(video.filters)])
+    cmd.extend(["-c:v", encoder, "-an", "-f", "null", "-"])
+    return cmd
+
+
+def probe_pipeline_tier(
+    ffmpeg_exe: str,
+    input_path: str,
+    encoder: str,
+    codec_type: str,
+    src_h: int,
+    tgt_h: int,
+    src_fps: float,
+    tgt_fps: float,
+    vaapi_node: Optional[str] = None,
+) -> Tier:
+    """Select the most GPU-resident pipeline tier that works on the real input.
+
+    Tries ZERO_COPY, then UPLOAD, and falls back to LEGACY. CPU encoders return
+    LEGACY without probing.
+
+    Args:
+        ffmpeg_exe: Path to the ffmpeg executable.
+        input_path: Source video path.
+        encoder: FFmpeg encoder name.
+        codec_type: "hevc" or "h264".
+        src_h: Source height in pixels.
+        tgt_h: Target height for scaling.
+        src_fps: Source frames per second.
+        tgt_fps: Target frames per second.
+        vaapi_node: Optional VA-API render node.
+
+    Returns:
+        The first tier whose probe encode succeeds, else `Tier.LEGACY`.
+
+    Example:
+        >>> probe_pipeline_tier("ffmpeg", "in.mp4", "libx265", "hevc", 1080, 720, 60.0, 30.0)
+        <Tier.LEGACY: 'legacy'>
+    """
+    if backend_for_encoder(encoder) is None:
+        return Tier.LEGACY
+    for tier in PIPELINE_PROBE_TIERS:
+        cmd = build_probe_cmd(
+            ffmpeg_exe, input_path, encoder, codec_type, tier,
+            src_h, tgt_h, src_fps, tgt_fps, vaapi_node,
+        )
+        if _run_probe(cmd, PIPELINE_PROBE_TIMEOUT_S, f"{encoder} {tier.label} pipeline"):
+            log.debug("Pipeline tier: %s", tier.label)
+            return tier
+    log.debug("Pipeline tier: %s (no hardware-resident tier passed its probe)", Tier.LEGACY.label)
+    return Tier.LEGACY

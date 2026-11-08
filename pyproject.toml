@@ -1,9 +1,56 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "video-compression"
 description = "Discord-compliant video compression with hardware-accelerated encoding"
+readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "GPL-3.0-or-later"
+authors = [{ name = "SimpNick6703" }]
+keywords = [
+    "discord",
+    "video-compression",
+    "video-compressor",
+    "ffmpeg",
+    "nvenc",
+    "scale-cuda",
+    "hevc",
+    "h265",
+    "h264",
+    "hardware-acceleration",
+    "vaapi",
+    "qsv",
+    "amf",
+    "videotoolbox",
+    "cli",
+]
+dynamic = ["version"]
 dependencies = ["rich>=13.0"]
+
+[project.scripts]
+videocompress = "videocompress.cli:main"
+
+[project.urls]
+Homepage = "https://simpnick6703.github.io/Video-Compression/"
+Repository = "https://github.com/SimpNick6703/Video-Compression"
+Releases = "https://github.com/SimpNick6703/Video-Compression/releases"
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+dev = ["pytest>=8.0", "psutil>=5.9", "ruff>=0.17,<0.18"]
+
+[tool.setuptools_scm]
+fallback_version = "1.2.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+# Syntax errors and pyflakes only: undefined names, unused imports/variables.
+select = ["E9", "F"]
