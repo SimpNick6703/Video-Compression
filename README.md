@@ -41,11 +41,14 @@ Under the hood, the engine calculates optimal Bits-Per-Pixel (BPP) rate control,
 ## Requirements
 For running the script locally (your own build):
 - Python 3.11+
-- ffmpeg installed and added to PATH
+- ffmpeg installed and added to PATH (Optional)
 - CUDA capable GPU for faster encoding (Optional)
 - HEVC or H.264 encoding capable GPU (Optional)
 
 For using prebuilt binaries from releases, you just need to download the executable for your platform; no installation required (standalone executables bundle lightweight FFmpeg/FFprobe binaries from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)). To make full use of GPU acceleration, you need a compatible NVIDIA/AMD/Intel GPU that supports hardware-accelerated video encoding.
+
+> [!IMPORTANT]
+> On Linux, the bundled FFmpeg requires the VA-API runtime libraries `libva2`, `libva-drm2` and `libdrm2`. They are generally already present on desktop distributions, but minimal installs and containers may need them installed (e.g. `sudo apt install libva2 libva-drm2 libdrm2`).
 
 > [!NOTE]
 > You may view if your Nvidia GPU supports NVENC [here](https://developer.nvidia.com/video-encode-decode-support-matrix) and keep your Nvidia GPU driver version 570.0 or higher.
@@ -237,6 +240,7 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 ## Known Issues
 
 - **Brief stutter at the split midpoint (parallel-split hardware encodes):** the two halves are encoded in parallel and concatenated, which leaves a video timestamp gap of roughly 40-100 ms at the midpoint. Playback stutters briefly there, and the video runs slightly behind the audio for the second half. A fix is planned for the next release.
+- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically, so the executable exits immediately with a "cannot open shared object file" error on systems without them. The next release will link these statically in [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds), removing this requirement.
 
 ## Privacy Policy
 
