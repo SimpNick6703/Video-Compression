@@ -1,3 +1,5 @@
+
+https://github.com/user-attachments/assets/be9f454a-03fa-4fc2-a83b-8877c8a5c0e8
 # Video-Compression
 
 [![GitHub Release](https://img.shields.io/github/v/release/SimpNick6703/Video-Compression?style=flat-square&color=06b6d4)](https://github.com/SimpNick6703/Video-Compression/releases)
@@ -13,7 +15,7 @@ Most users do not want to configure encoders or calculate bitrates manually—th
 
 **Video-Compression** provides zero-config, drag-and-drop standalone executables for Windows, Linux, and macOS. Simply drop your video file onto your chosen target preset to compress it directly for Discord.
 
-https://github.com/user-attachments/assets/a6dfe650-9bcb-4e02-b9d6-36e6b105639e
+https://github.com/user-attachments/assets/a13a3912-dce2-41c3-8945-a1f4f946e578
 
 ### Discord Preset Tiers
 
