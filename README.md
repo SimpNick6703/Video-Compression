@@ -1,5 +1,3 @@
-
-https://github.com/user-attachments/assets/be9f454a-03fa-4fc2-a83b-8877c8a5c0e8
 # Video-Compression
 
 [![GitHub Release](https://img.shields.io/github/v/release/SimpNick6703/Video-Compression?style=flat-square&color=06b6d4)](https://github.com/SimpNick6703/Video-Compression/releases)
