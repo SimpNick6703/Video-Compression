@@ -885,14 +885,9 @@
                         <h4 class="text-base font-bold text-white">Join without re-encoding</h4>
                         <pre class="df-pre">ffmpeg -f concat -safe 0 -i list.txt -i input
   -map 0:v:0 -map 1:a:0? -c:v copy -movflags +faststart</pre>
-                        <p>Both halves are encoded without audio. The concat demuxer joins the video halves without re-encoding, takes the audio from the source in one piece (so nothing shifts at <strong class="text-white">T</strong>), and moves the index (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-emerald-300 underline hover:text-emerald-200">moov box</a>) to the front of the file so it can start playing before it fully downloads.</p>
+                        <p>Both halves are encoded without audio. The concat demuxer joins the video halves without re-encoding, takes the audio from the source in one piece, and moves the index (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-emerald-300 underline hover:text-emerald-200">moov box</a>) to the front of the file so it can start playing before it fully downloads.</p>
                     </li>
                 </ol>
-
-                <p class="df-callout border-l-amber-400 mt-4">
-                    <strong>Known issue:</strong>
-                    up to the current release, the stitch leaves a 40&ndash;100 ms gap in video timestamps at <strong class="text-white">T</strong>, so playback stutters briefly there and video runs slightly behind audio for the second half. The stitch above fixes this and ships in the next release; see <a href="https://github.com/SimpNick6703/Video-Compression#known-issues" target="_blank" rel="noopener noreferrer" class="text-amber-300 underline hover:text-amber-200">Known Issues</a>.
-                </p>
 
                 <details class="df-details df-card mt-4">
                     <summary>Show the full split flowchart</summary>

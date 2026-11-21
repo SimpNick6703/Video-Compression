@@ -220,7 +220,6 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 
 ## Known Issues
 
-- **Brief stutter at the split midpoint (parallel-split hardware encodes):** the two halves are encoded in parallel and concatenated, which leaves a video timestamp gap of roughly 40-100 ms at the midpoint. Playback stutters briefly there, and the video runs slightly behind the audio for the second half. Fixed on `main` (segments are now encoded video-only and the source audio is added in one piece when stitching); the fix ships in the next release.
 - **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically. Desktop distributions ship them by default; minimal server, container and WSL installs may not. Without them, released versions fail with a "cannot open shared object file" error; from the next release, the executable stops with a message naming the missing library and the install command for your distribution (for example `sudo apt install libva2 libva-drm2 libdrm2`).
 
 ## Roadmap
