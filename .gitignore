@@ -1,10 +1,9 @@
 dist/
 build/
+.agents/
 *.spec
-ffmpeg.exe
-ffprobe.exe
-ffmpeg
-ffprobe
+ffmpeg*
+ffprobe*
 __pycache__/
 *.pyc
 *.pyo
@@ -16,3 +15,11 @@ ffmpeg-minimal-builds/
 .venv/
 venv/
 ffmpeg-licenses/
+*.mp4
+tests/benchmark_outputs/
+tests/binaries/
+tests/reports/
+
+# Launch film / video generation (HyperFrames), kept local
+launch-film/
+*.mhtml
