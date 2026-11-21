@@ -18,6 +18,11 @@
   #error Pass /DSourceExe=<path to the 100mb-hevc Windows executable>
 #endif
 
+#ifndef NumericVersion
+  ; File version resources only accept numbers; branch builds have none.
+  #define NumericVersion "0.0.0"
+#endif
+
 #define AppName "Video-Compression"
 #define AppUrl "https://github.com/SimpNick6703/Video-Compression"
 ; Submenu entries live in one shared key; each extension's menu entry points at it.
@@ -32,6 +37,8 @@ AppId={{004B68D8-64A4-46FA-8982-4B69DF87D66F}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=SimpNick6703
+AppCopyright=Copyright (c) 2026 SimpNick6703. Licensed under GPL-3.0-or-later.
+VersionInfoVersion={#NumericVersion}
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}/issues
 AppUpdatesURL={#AppUrl}/releases
