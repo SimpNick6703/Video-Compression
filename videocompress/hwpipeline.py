@@ -6,7 +6,7 @@ No I/O happens here, so every graph can be unit-tested as an exact string.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, NamedTuple, Optional, Tuple
 
 
 class Tier(Enum):
@@ -307,14 +307,14 @@ def _upload_args(
 
 
 def _cpu_filters(
-    src_h: int, tgt_h: int, src_fps: float, tgt_fps: float, codec_type: str, keep_hdr: bool = False,
+    src_h: int, tgt_h: int, src_fps: float, tgt_fps: float, codec_type: str, ten_bit: bool = False,
 ) -> Tuple[str, ...]:
     filters = []
     if tgt_fps < src_fps:
         filters.append(f"fps={tgt_fps}")
     if _needs_scale(src_h, tgt_h):
         filters.append(f"scale=-2:{tgt_h}:flags=lanczos")
-    if keep_hdr:
+    if ten_bit:
         filters.append("format=p010le")
     elif codec_type == "h264":
         filters.append("format=yuv420p")
@@ -322,9 +322,9 @@ def _cpu_filters(
 
 
 def _legacy_nvenc_args(
-    src_h: int, tgt_h: int, src_fps: float, tgt_fps: float, codec_type: str, keep_hdr: bool = False,
+    src_h: int, tgt_h: int, src_fps: float, tgt_fps: float, codec_type: str, ten_bit: bool = False,
 ) -> VideoArgs:
-    pix_fmt = "p010" if keep_hdr else "yuv420p" if codec_type == "h264" else "nv12"
+    pix_fmt = "p010" if ten_bit else "yuv420p" if codec_type == "h264" else "nv12"
     filters: Tuple[str, ...] = ()
     if _needs_scale(src_h, tgt_h):
         filters = (f"scale_cuda=-2:{tgt_h}:interp_algo=lanczos:format={pix_fmt}",)
@@ -338,27 +338,39 @@ def _legacy_nvenc_args(
 
 
 def _legacy_vaapi_args(
-    node: Optional[str], src_h: int, tgt_h: int, src_fps: float, tgt_fps: float, keep_hdr: bool = False,
+    node: Optional[str], src_h: int, tgt_h: int, src_fps: float, tgt_fps: float, ten_bit: bool = False,
 ) -> VideoArgs:
     filters = list(_cpu_filters(src_h, tgt_h, src_fps, tgt_fps, "hevc"))
-    filters.append("format=p010,hwupload" if keep_hdr else "format=nv12,hwupload")
+    filters.append("format=p010,hwupload" if ten_bit else "format=nv12,hwupload")
     return VideoArgs(pre_input=_vaapi_devices(node), filters=tuple(filters))
 
 
 def _legacy_args(
     backend: Optional[HwBackend], node: Optional[str], src_h: int, tgt_h: int,
-    src_fps: float, tgt_fps: float, codec_type: str, keep_hdr: bool = False,
+    src_fps: float, tgt_fps: float, codec_type: str, ten_bit: bool = False,
 ) -> VideoArgs:
     if backend is None:
         return VideoArgs(filters=_cpu_filters(src_h, tgt_h, src_fps, tgt_fps, codec_type))
     if backend.name == "nvenc":
-        return _legacy_nvenc_args(src_h, tgt_h, src_fps, tgt_fps, codec_type, keep_hdr)
+        return _legacy_nvenc_args(src_h, tgt_h, src_fps, tgt_fps, codec_type, ten_bit)
     if backend.name == "vaapi":
-        return _legacy_vaapi_args(node, src_h, tgt_h, src_fps, tgt_fps, keep_hdr)
+        return _legacy_vaapi_args(node, src_h, tgt_h, src_fps, tgt_fps, ten_bit)
     return VideoArgs(
         pre_input=("-hwaccel", "auto"),
-        filters=_cpu_filters(src_h, tgt_h, src_fps, tgt_fps, codec_type, keep_hdr),
+        filters=_cpu_filters(src_h, tgt_h, src_fps, tgt_fps, codec_type, ten_bit),
     )
+
+
+class HdrSource(NamedTuple):
+    """HDR properties of the source video stream.
+
+    Attributes:
+        transfer: `smpte2084` (PQ, HDR10) or `arib-std-b67` (HLG).
+        ten_bit: True when the source has more than 8 bits per sample.
+    """
+
+    transfer: str
+    ten_bit: bool
 
 
 # HDR (PQ or HLG) to SDR BT.709, run on the CPU after scaling so it touches fewer pixels.
@@ -381,31 +393,29 @@ _TONEMAP_DECODE: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def hdr_handling(backend: Optional[HwBackend], codec_type: str, hdr_transfer: Optional[str]) -> str:
+def hdr_handling(backend: Optional[HwBackend], codec_type: str, hdr: Optional[HdrSource]) -> str:
     """Decide what happens to an HDR source.
 
-    Hardware HEVC keeps HDR as 10-bit HDR10/HLG. H.264 has no 10-bit hardware
+    Hardware HEVC keeps HDR at the source's bit depth (8 or 10). H.264 has no 10-bit hardware
     encoders, and the bundled x265 is 8-bit on Linux and macOS, so every other
     case is tone-mapped to SDR.
 
     Example:
-        >>> hdr_handling(BACKENDS["nvenc"], "hevc", "smpte2084")
+        >>> hdr_handling(BACKENDS["nvenc"], "hevc", HdrSource("smpte2084", True))
         'keep'
-        >>> hdr_handling(BACKENDS["nvenc"], "h264", "smpte2084")
+        >>> hdr_handling(BACKENDS["nvenc"], "h264", HdrSource("smpte2084", True))
         'tonemap'
         >>> hdr_handling(None, "hevc", None)
         'sdr'
     """
-    if not hdr_transfer:
+    if not hdr:
         return "sdr"
     return "keep" if backend is not None and codec_type == "hevc" else "tonemap"
 
 
-def _keep_hdr_output(hdr_transfer: str) -> Tuple[str, ...]:
-    return (
-        "-profile:v", "main10",
-        "-color_primaries", "bt2020", "-color_trc", hdr_transfer, "-colorspace", "bt2020nc",
-    )
+def _keep_hdr_output(hdr: HdrSource) -> Tuple[str, ...]:
+    profile = ("-profile:v", "main10") if hdr.ten_bit else ()
+    return profile + ("-color_primaries", "bt2020", "-color_trc", hdr.transfer, "-colorspace", "bt2020nc")
 
 
 def _tonemap_args(
@@ -434,7 +444,7 @@ def build_video_args(
     tgt_fps: float,
     codec_type: str,
     vaapi_node: Optional[str] = None,
-    hdr_transfer: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> VideoArgs:
     """Build the decode, filter and upload arguments for one pipeline tier.
 
@@ -447,8 +457,7 @@ def build_video_args(
         tgt_fps: Target frames per second. Not below `src_fps` disables fps limiting.
         codec_type: `hevc` or `h264`.
         vaapi_node: Optional VA-API render node (e.g. `/dev/dri/renderD128`).
-        hdr_transfer: Source transfer (`smpte2084` or `arib-std-b67`) for HDR
-            input, else None. See `hdr_handling` for what happens to it.
+        hdr: HDR properties of the source, else None. See `hdr_handling` for what happens to it.
 
     Returns:
         The video arguments split into pre-input, filters and post-input parts.
@@ -458,18 +467,18 @@ def build_video_args(
         >>> ",".join(args.filters)
         'fps=30.0,scale_vaapi=w=-2:h=720:format=nv12'
     """
-    handling = hdr_handling(backend, codec_type, hdr_transfer)
+    handling = hdr_handling(backend, codec_type, hdr)
     if handling == "tonemap":
         return _tonemap_args(backend, vaapi_node, src_h, tgt_h, src_fps, tgt_fps)
-    keep_hdr = handling == "keep"
+    ten_bit = handling == "keep" and hdr is not None and hdr.ten_bit
 
     if backend is None or tier is Tier.LEGACY:
-        args = _legacy_args(backend, vaapi_node, src_h, tgt_h, src_fps, tgt_fps, codec_type, keep_hdr)
+        args = _legacy_args(backend, vaapi_node, src_h, tgt_h, src_fps, tgt_fps, codec_type, ten_bit)
     else:
         scaled_h = tgt_h if _needs_scale(src_h, tgt_h) else None
-        pix_fmt = "p010" if keep_hdr else _target_pix_fmt(backend, codec_type)
+        pix_fmt = "p010" if ten_bit else _target_pix_fmt(backend, codec_type)
         builder = _zero_copy_args if tier is Tier.ZERO_COPY else _upload_args
         args = builder(backend, vaapi_node, scaled_h, pix_fmt, src_fps, tgt_fps)
-    if keep_hdr and hdr_transfer:
-        args = VideoArgs(args.pre_input, args.filters, args.post_input + _keep_hdr_output(hdr_transfer))
+    if handling == "keep" and hdr:
+        args = VideoArgs(args.pre_input, args.filters, args.post_input + _keep_hdr_output(hdr))
     return args

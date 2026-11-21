@@ -75,7 +75,7 @@ For using prebuilt binaries from releases, you just need to download the executa
 > `{codec}` can be either `hevc` or `h264` depending on the build you downloaded. HEVC offers better compression efficiency, while H.264 offers better compatibility with older devices.
 
 > [!NOTE]
-> **HDR videos (HDR10 and HLG):** with a GPU encoder, HEVC keeps the video in HDR (10-bit). H.264, and HEVC on the CPU encoder, convert it to standard colours (SDR) so it looks right on every screen and player. That conversion runs on the CPU, so it is slower: an 8.8 s 4K60 HDR clip took 32 s instead of 7 s on an RTX 4060 laptop.
+> **HDR videos (HDR10 and HLG):** with a GPU encoder, HEVC keeps the video in HDR at its original bit depth (10-bit stays 10-bit, 8-bit stays 8-bit). H.264, and HEVC on the CPU encoder, convert it to standard colours (SDR) so it looks right on every screen and player. That conversion runs on the CPU, so it is slower: an 8.8 s 4K60 HDR clip took 32 s instead of 7 s on an RTX 4060 laptop.
 
 ## How to Run (Python CLI)
 

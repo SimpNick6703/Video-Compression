@@ -7,13 +7,14 @@ import subprocess
 import os
 import math
 import json
+import re
 import logging
 import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import Tuple, Optional, List, Sequence, Mapping
 
-from videocompress.hwpipeline import Tier, backend_for_encoder, build_video_args, hdr_handling
+from videocompress.hwpipeline import HdrSource, Tier, backend_for_encoder, build_video_args, hdr_handling
 
 log = logging.getLogger(__name__)
 
@@ -724,26 +725,40 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
         return None
 
 
-def get_hdr_transfer(input_path: str) -> Optional[str]:
-    """Return the HDR transfer of the first video stream, or None for SDR.
+def get_hdr_source(input_path: str) -> Optional[HdrSource]:
+    """Return the HDR transfer and bit depth of the first video stream, or None for SDR.
 
     Only PQ (`smpte2084`, HDR10) and HLG (`arib-std-b67`) count as HDR; BT.2020
     primaries alone do not.
 
     Example:
-        >>> get_hdr_transfer("sdr.mp4") is None  # doctest: +SKIP
+        >>> get_hdr_source("sdr.mp4") is None  # doctest: +SKIP
         True
     """
     cmd = [
         get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=color_transfer", "-of", "default=nw=1:nk=1", input_path,
+        "-show_entries", "stream=color_transfer,pix_fmt", "-of", "json", input_path,
     ]
     try:
-        transfer = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env()).strip()
-    except (subprocess.CalledProcessError, OSError) as e:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env())
+        stream = json.loads(out)["streams"][0]
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError, IndexError) as e:
         log.debug("Could not read color transfer: %r", e)
         return None
-    return transfer if transfer in HDR_TRANSFERS else None
+    transfer = stream.get("color_transfer", "")
+    if transfer not in HDR_TRANSFERS:
+        return None
+    return HdrSource(transfer, is_high_bit_depth(stream.get("pix_fmt", "")))
+
+
+def is_high_bit_depth(pix_fmt: str) -> bool:
+    """Return True for pixel formats with more than 8 bits per sample.
+
+    Example:
+        >>> is_high_bit_depth("yuv420p10le"), is_high_bit_depth("p010le"), is_high_bit_depth("yuvj420p")
+        (True, True, False)
+    """
+    return bool(re.search(r"p1[0246]|1[0246](le|be)$", pix_fmt))
 
 
 def get_smart_split_point(input_path: str, duration: float) -> float:
@@ -879,7 +894,7 @@ def build_single_pass_cmd(
     audio_kbps: int = 128,
     tier: Tier = Tier.LEGACY,
     vaapi_node: Optional[str] = None,
-    hdr_transfer: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> List[str]:
     """Build a single-pass FFmpeg command for hardware encoders.
 
@@ -899,7 +914,7 @@ def build_single_pass_cmd(
         audio_kbps: Probed audio bitrate in kbps (0 for silent video).
         tier: Hardware pipeline tier; LEGACY reproduces the pre-v1.2 arguments.
         vaapi_node: Optional VA-API render node (e.g., `/dev/dri/renderD128`).
-        hdr_transfer: Transfer of an HDR source (`smpte2084`/`arib-std-b67`), else None.
+        hdr: HDR properties of the source, else None.
 
     Returns:
         A command list ready for subprocess execution.
@@ -910,7 +925,7 @@ def build_single_pass_cmd(
         True
     """
     video = build_video_args(
-        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node, hdr_transfer
+        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node, hdr
     )
     cmd: List[str] = [ffmpeg_exe, "-y", *video.pre_input]
 
@@ -997,7 +1012,7 @@ def build_probe_cmd(
     src_fps: float,
     tgt_fps: float,
     vaapi_node: Optional[str] = None,
-    hdr_transfer: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> List[str]:
     """Build a one-second null-output encode of the real input for one tier.
 
@@ -1012,7 +1027,7 @@ def build_probe_cmd(
         src_fps: Source frames per second.
         tgt_fps: Target frames per second.
         vaapi_node: Optional VA-API render node.
-        hdr_transfer: Transfer of an HDR source, else None.
+        hdr: HDR properties of the source, else None.
 
     Returns:
         A command list ready for subprocess execution.
@@ -1023,7 +1038,7 @@ def build_probe_cmd(
         '1'
     """
     video = build_video_args(
-        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node, hdr_transfer
+        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node, hdr
     )
     cmd: List[str] = [ffmpeg_exe, "-hide_banner", "-v", "error", *video.pre_input]
     cmd.extend(["-t", "1", "-i", input_path, *video.post_input])
@@ -1043,7 +1058,7 @@ def probe_pipeline_tier(
     src_fps: float,
     tgt_fps: float,
     vaapi_node: Optional[str] = None,
-    hdr_transfer: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> Tier:
     """Select the most GPU-resident pipeline tier that works on the real input.
 
@@ -1060,7 +1075,7 @@ def probe_pipeline_tier(
         src_fps: Source frames per second.
         tgt_fps: Target frames per second.
         vaapi_node: Optional VA-API render node.
-        hdr_transfer: Transfer of an HDR source, else None. Tone-mapped
+        hdr: HDR properties of the source, else None. Tone-mapped
             sources always use LEGACY (the tone mapping runs on the CPU).
 
     Returns:
@@ -1071,12 +1086,12 @@ def probe_pipeline_tier(
         <Tier.LEGACY: 'legacy'>
     """
     backend = backend_for_encoder(encoder)
-    if backend is None or hdr_handling(backend, codec_type, hdr_transfer) == "tonemap":
+    if backend is None or hdr_handling(backend, codec_type, hdr) == "tonemap":
         return Tier.LEGACY
     for tier in PIPELINE_PROBE_TIERS:
         cmd = build_probe_cmd(
             ffmpeg_exe, input_path, encoder, codec_type, tier,
-            src_h, tgt_h, src_fps, tgt_fps, vaapi_node, hdr_transfer,
+            src_h, tgt_h, src_fps, tgt_fps, vaapi_node, hdr,
         )
         if _run_probe(cmd, PIPELINE_PROBE_TIMEOUT_S, f"{encoder} {tier.label} pipeline"):
             log.debug("Pipeline tier: %s", tier.label)
