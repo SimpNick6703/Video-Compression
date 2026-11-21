@@ -188,7 +188,7 @@ This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for 
 |:---|:---|:---|
 | **CI** (`ci.yml`) | Pull requests, pushes to `main`, manual | `ruff check` and `pytest` on Python 3.11 and 3.13 |
 | **Deploy Architecture Page** (`deploy.yml`) | Pushes to `main` that change `docs/`, manual | Publishes `docs/` to GitHub Pages |
-| **Build & Release** (`release.yml`) | Creating a GitHub release, manual | Builds the executables on Windows, Linux and macOS, plus the Windows installer; attaches them to the release (manual runs only keep them as run artifacts) |
+| **Build & Release** (`release.yml`) | Publishing a GitHub release (including pre-releases and drafts once published), manual | Builds the executables on Windows, Linux and macOS, plus the Windows installer; attaches them to the release (manual runs only keep them as run artifacts) |
 
 ### Releasing
 
