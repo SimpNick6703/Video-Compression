@@ -25,6 +25,7 @@ from videocompress.core import (
     get_clean_env,
     get_file_size,
     clean_log_file,
+    get_hdr_transfer,
     get_video_info,
     find_missing_runtime_library,
     get_smart_split_point,
@@ -39,7 +40,7 @@ from videocompress.core import (
     calculate_video_bitrate,
     calculate_split_bitrates,
 )
-from videocompress.hwpipeline import Tier
+from videocompress.hwpipeline import Tier, backend_for_encoder, hdr_handling
 from videocompress.progress import (
     console,
     show_encoder_detection,
@@ -68,6 +69,7 @@ def _encode_hw_split(
     opt_fps: float,
     tier: Tier = Tier.LEGACY,
     vaapi_node: Optional[str] = None,
+    hdr_transfer: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Execute parallel split single-pass encoding for hardware encoders.
 
@@ -87,6 +89,7 @@ def _encode_hw_split(
         opt_fps: Target frames per second.
         tier: Hardware pipeline tier used for both segment commands.
         vaapi_node: Optional VA-API render node.
+        hdr_transfer: Transfer of an HDR source, else None.
 
     Returns:
         Tuple of (success flag, error message).
@@ -117,6 +120,7 @@ def _encode_hw_split(
                 audio_kbps=0,  # audio is added from the source when stitching
                 tier=tier,
                 vaapi_node=vaapi_node,
+                hdr_transfer=hdr_transfer,
             )
             cmd_b = build_single_pass_cmd(
                 ffmpeg_exe=ffmpeg_exe,
@@ -134,6 +138,7 @@ def _encode_hw_split(
                 audio_kbps=0,  # audio is added from the source when stitching
                 tier=tier,
                 vaapi_node=vaapi_node,
+                hdr_transfer=hdr_transfer,
             )
 
             log.debug("Segment bitrates: %s kbps (split at %.3f s)", brs, split_time)
@@ -233,6 +238,7 @@ def _encode_cpu_single(
     src_h: int,
     opt_h: int,
     opt_fps: float,
+    hdr_transfer: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Execute serial single-pass encoding for CPU software fallback (libx265, libx264).
 
@@ -249,6 +255,7 @@ def _encode_cpu_single(
         src_h: Source height in pixels.
         opt_h: Target height for scaling.
         opt_fps: Target frames per second.
+        hdr_transfer: Transfer of an HDR source (tone-mapped to SDR), else None.
 
     Returns:
         Tuple of (success flag, error message).
@@ -277,6 +284,7 @@ def _encode_cpu_single(
             tgt_h=opt_h,
             tgt_fps=opt_fps,
             audio_kbps=audio_kbps,
+            hdr_transfer=hdr_transfer,
         )
         log.debug("Bitrate: %s kbps", bitrate_k)
         log.debug("Encode command: %s", shlex.join(cmd))
@@ -343,6 +351,8 @@ def compress_video(
     if not info:
         return False, f"Failed to extract video info from: {input_path}"
     duration, orig_bytes, fps, audio_kbps, src_w, src_h = info
+    hdr_transfer = get_hdr_transfer(input_path)
+    log.debug("HDR transfer: %s", hdr_transfer or "none (SDR)")
 
     if (orig_bytes / MB_TO_BYTES) <= target_size_mb:
         return False, f"Already smaller than target: {orig_bytes / MB_TO_BYTES:.2f} MB <= {target_size_mb} MB"
@@ -371,13 +381,17 @@ def compress_video(
     show_encoder_detection(detection_results)
 
     split_info: Optional[str] = None
+    hdr_info = ""
+    if hdr_transfer:
+        keep = hdr_handling(backend_for_encoder(active_encoder), codec_type, hdr_transfer) == "keep"
+        hdr_info = " \u00b7 HDR kept (10-bit)" if keep else " \u00b7 HDR tone-mapped to SDR"
 
     # Branch 1: Hardware Encoders (Parallel Split Single-Pass)
     if active_encoder not in ("libx265", "libx264"):
         vaapi_node = resolve_vaapi_node(active_encoder) if "vaapi" in active_encoder else None
         tier = probe_pipeline_tier(
             ffmpeg_exe, input_path, active_encoder, codec_type,
-            src_h, opt_h, fps, opt_fps, vaapi_node,
+            src_h, opt_h, fps, opt_fps, vaapi_node, hdr_transfer,
         )
         split_time = get_smart_split_point(input_path, duration)
         durs_tuple = (split_time, duration - split_time)
@@ -400,17 +414,18 @@ def compress_video(
                 opt_fps=opt_fps,
                 tier=t,
                 vaapi_node=vaapi_node,
+                hdr_transfer=hdr_transfer,
             ),
             tier,
         )
-        mode_str = f"parallel split \u00b7 {tier.label}"
+        mode_str = f"parallel split \u00b7 {tier.label}{hdr_info}"
         if not ok:
             clean_log_file()
             return False, err
 
     # Branch 2: CPU Fallback (Serial Single-Pass)
     else:
-        mode_str = "CPU single-pass"
+        mode_str = f"CPU single-pass{hdr_info}"
         ok, err = _encode_cpu_single(
             ffmpeg_exe=ffmpeg_exe,
             input_path=input_path,
@@ -424,6 +439,7 @@ def compress_video(
             src_h=src_h,
             opt_h=opt_h,
             opt_fps=opt_fps,
+            hdr_transfer=hdr_transfer,
         )
         if not ok:
             clean_log_file()

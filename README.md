@@ -74,6 +74,9 @@ For using prebuilt binaries from releases, you just need to download the executa
 > [!NOTE]
 > `{codec}` can be either `hevc` or `h264` depending on the build you downloaded. HEVC offers better compression efficiency, while H.264 offers better compatibility with older devices.
 
+> [!NOTE]
+> **HDR videos (HDR10 and HLG):** with a GPU encoder, HEVC keeps the video in HDR (10-bit). H.264, and HEVC on the CPU encoder, convert it to standard colours (SDR) so it looks right on every screen and player. That conversion runs on the CPU, so it is slower: an 8.8 s 4K60 HDR clip took 32 s instead of 7 s on an RTX 4060 laptop.
+
 ## How to Run (Python CLI)
 
 You can also run the compression tool directly from source via Python without needing to build standalone executables.
@@ -226,7 +229,6 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 
 ## Roadmap
 
-- **HDR sources:** tone-map HDR10 and HLG videos to SDR so they look right after compression.
 - **WinGet:** `winget install SimpNick6703.VideoCompression` for the right-click menu installer.
 - **PyPI:** `pip install videocompress`.
 

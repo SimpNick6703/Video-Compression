@@ -38,9 +38,9 @@ OUTPUT_DIR = "dist"
 
 # Filters the hardware-resident pipelines rely on, per platform
 REQUIRED_FILTERS = {
-    "linux": ("scale_cuda", "hwupload_cuda", "scale_vaapi", "hwupload", "fps"),
-    "win32": ("scale_cuda", "hwupload_cuda", "vpp_amf", "vpp_qsv", "hwmap", "hwupload", "fps"),
-    "darwin": ("scale_vt", "hwupload", "fps"),
+    "linux": ("scale_cuda", "hwupload_cuda", "scale_vaapi", "hwupload", "fps", "zscale", "tonemap"),
+    "win32": ("scale_cuda", "hwupload_cuda", "vpp_amf", "vpp_qsv", "hwmap", "hwupload", "fps", "zscale", "tonemap"),
+    "darwin": ("scale_vt", "hwupload", "fps", "zscale", "tonemap"),
 }
 FILTER_FLAGS_PATTERN = re.compile(r"[TSC.|]{2,3}")
 FILTER_CHECK_TIMEOUT_S = 30
