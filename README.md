@@ -136,14 +136,14 @@ pip install -e ".[dev,build]"      # dev: pytest, ruff, psutil; build: pyinstall
 | Extra | Installs | Needed for |
 |:---|:---|:---|
 | *(none)* | `rich` | Running the CLI from source |
-| `dev` | `pytest`, `ruff`, `psutil` | Tests, linting, `tools/bench_vitals.py` |
+| `dev` | `pytest`, `ruff`, `psutil` | Tests, linting |
 | `build` | `pyinstaller` | `python build.py` |
 
 FFmpeg is looked up in this order: the bundled copy (inside an executable), an `ffmpeg-minimal-builds/` or `minimal-builds/` folder, the repository root, then `PATH`. `python build.py` downloads the minimal build to the repository root.
 
 ### Tests and Linting
 
-The tests need no GPU and no FFmpeg; every FFmpeg call is replaced with a fake, and the suite runs in well under a second. Real hardware is covered by running the CLI or the benchmark tool below.
+The tests need no GPU and no FFmpeg; every FFmpeg call is replaced with a fake, and the suite runs in well under a second. Real hardware is covered by running the CLI.
 
 ```bash
 pytest -q                                   # whole suite
@@ -179,25 +179,6 @@ This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for 
 | `FFMPEG_REPO` | Download FFmpeg from a fork (default `SimpNick6703/ffmpeg-minimal-builds`). |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Used only to list FFmpeg releases; avoids the low anonymous GitHub API rate limit. |
 | `CI` | When set, a missing hardware filter fails the build instead of only warning. |
-
-### Benchmarking
-
-`tools/bench_vitals.py` runs any command and reports wall time, CPU time of the command and everything it starts, host CPU, peak memory and GPU engine load as one JSON line. It is a development tool and is not bundled into the executables.
-
-```bash
-python tools/bench_vitals.py --label 4k_v120 --output out.mp4 -- python -m videocompress input-4K60.mp4 out.mp4 100 hevc
-python tools/bench_vitals.py --label old --output out.mp4 --csv samples.csv -- ./100mb-hevc-linux-v1.1.6 input-4K60.mp4 out.mp4
-```
-
-| Option | Meaning |
-|:---|:---|
-| `--label` | Name stored in the JSON line (required) |
-| `--output` | Encoded file whose size is reported as `output_mb` |
-| `--csv` | Also write per-sample rows to this file |
-| `--interval` | Sampling interval in seconds (default `0.5`) |
-| `--` | Everything after it is the command to measure |
-
-GPU load comes from DRM fdinfo on Linux (Intel and AMD, no root needed) and from `nvidia-smi` on any OS (first NVIDIA GPU). CPU time is exact on Linux and macOS and sampled on Windows (`tree_cpu_source` in the output says which).
 
 ### CI/CD Workflows
 
@@ -239,8 +220,14 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 
 ## Known Issues
 
-- **Brief stutter at the split midpoint (parallel-split hardware encodes):** the two halves are encoded in parallel and concatenated, which leaves a video timestamp gap of roughly 40-100 ms at the midpoint. Playback stutters briefly there, and the video runs slightly behind the audio for the second half. A fix is planned for the next release.
-- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically, so the executable exits immediately with a "cannot open shared object file" error on systems without them. The next release will link these statically in [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds), removing this requirement.
+- **Brief stutter at the split midpoint (parallel-split hardware encodes):** the two halves are encoded in parallel and concatenated, which leaves a video timestamp gap of roughly 40-100 ms at the midpoint. Playback stutters briefly there, and the video runs slightly behind the audio for the second half. Fixed on `main` (segments are now encoded video-only and the source audio is added in one piece when stitching); the fix ships in the next release.
+- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically. Desktop distributions ship them by default; minimal server, container and WSL installs may not. Without them, released versions fail with a "cannot open shared object file" error; from the next release, the executable stops with a message naming the missing library and the install command for your distribution (for example `sudo apt install libva2 libva-drm2 libdrm2`).
+
+## Roadmap
+
+- **HDR sources:** tone-map HDR10 and HLG videos to SDR so they look right after compression.
+- **Windows right-click menu:** an installer (and WinGet package) that adds *Compress to 20 MB / 50 MB / 100 MB / 1 GB / Custom...* to the right-click menu of video files.
+- **PyPI:** `pip install videocompress`.
 
 ## Privacy Policy
 
