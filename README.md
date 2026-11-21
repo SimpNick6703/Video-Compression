@@ -76,6 +76,8 @@ For using prebuilt binaries from releases, you just need to download the executa
 
 > [!NOTE]
 > **HDR videos (HDR10 and HLG):** with a GPU encoder, HEVC keeps the video in HDR at its original bit depth (10-bit stays 10-bit, 8-bit stays 8-bit). H.264, and HEVC on the CPU encoder, convert it to standard colours (SDR) so it looks right on every screen and player. That conversion runs on the CPU, so it is slower: an 8.8 s 4K60 HDR clip took 32 s instead of 7 s on an RTX 4060 laptop.
+>
+> **AV1 videos** can be compressed too (the output is still HEVC or H.264).
 
 ## How to Run (Python CLI)
 
@@ -175,7 +177,7 @@ python build.py --verbose        # same, but keep build/ and *.spec for debuggin
 python build.py --clean-ffmpeg   # also delete the downloaded ffmpeg/ffprobe afterwards
 ```
 
-This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for the current platform. If `ffmpeg`/`ffprobe` are not already in the repository root, it downloads the newest [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) release: the highest FFmpeg version, then the highest revision (e.g. `ffmpeg-n9.0.2-r2`). It then checks that the binary contains the hardware filters this platform needs.
+This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for the current platform. If `ffmpeg`/`ffprobe` are not already in the repository root, it downloads the newest [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) release: the highest FFmpeg version, then the highest revision (e.g. `ffmpeg-n9.0.2-r3`). It then checks that the binary contains the hardware filters this platform needs and the HDR tone-mapping filters (`zscale`, `tonemap`).
 
 | Environment variable | Effect |
 |:---|:---|
@@ -242,6 +244,6 @@ Video-Compression runs entirely offline: it reads the input video and writes the
 
 This project and its prebuilt standalone executables (which bundle static `ffmpeg` and `ffprobe` binaries from [SimpNick6703/ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)) are distributed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
 
-See the [LICENSE](LICENSE) file for the full license text. Each release also includes a `THIRD_PARTY_NOTICES-<platform>.txt` file with this license and the licenses of everything bundled in the executables (FFmpeg, x264, x265, Python, PyInstaller and the Python packages used). The notices also list the exact source revisions of the bundled FFmpeg build, whose source is available from the linked upstream repositories and [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds).
+See the [LICENSE](LICENSE) file for the full license text. Each release also includes a `THIRD_PARTY_NOTICES-<platform>.txt` file with this license and the licenses of everything bundled in the executables (FFmpeg, x264, x265, zimg, dav1d, Python, PyInstaller and the Python packages used). The notices also list the exact source revisions of the bundled FFmpeg build, whose source is available from the linked upstream repositories and [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds).
 
 
