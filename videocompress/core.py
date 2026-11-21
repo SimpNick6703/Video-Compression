@@ -545,6 +545,30 @@ def build_audio_args(audio_kbps: int, input_index: int = 0) -> List[str]:
     return ["-map", f"{input_index}:a:0?", *codec]
 
 
+def build_concat_list(first_path: str, second_path: str, split_time: float) -> str:
+    """Build the concat demuxer list for the two split segments.
+
+    The first segment's length is stated as the split time. Its reported
+    duration also counts its start offset (the encoder's reorder delay, which
+    grows with the duration of the first source frame), so when the two
+    segments start at different offsets the second one would otherwise be
+    placed late or early, leaving a gap or overlap at the split.
+
+    Args:
+        first_path: Segment covering 0 to the split time.
+        second_path: Segment covering the split time to the end.
+        split_time: Split timestamp in seconds.
+
+    Returns:
+        The list file contents.
+
+    Example:
+        >>> build_concat_list("a.mp4", "b.mp4", 1.5)
+        "file 'a.mp4'\\nduration 1.500000\\nfile 'b.mp4'\\n"
+    """
+    return f"file '{first_path}'\nduration {split_time:.6f}\nfile '{second_path}'\n"
+
+
 def build_concat_cmd(
     ffmpeg_exe: str,
     list_path: str,

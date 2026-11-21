@@ -32,6 +32,7 @@ from videocompress.core import (
     select_best_encoder,
     build_single_pass_cmd,
     build_concat_cmd,
+    build_concat_list,
     check_bsf_available,
     probe_pipeline_tier,
     resolve_vaapi_node,
@@ -154,7 +155,7 @@ def _encode_hw_split(
 
             with console.status("[bold cyan]  Stitching segments...", spinner="dots"):
                 with open(list_path, "w", encoding="utf-8") as lf:
-                    lf.write(f"file '{p1_path}'\nfile '{p2_path}'")
+                    lf.write(build_concat_list(p1_path, p2_path, split_time))
                 concat_cmd = build_concat_cmd(
                     ffmpeg_exe, list_path, output_path,
                     annexb_available=check_bsf_available("h264_mp4toannexb"),

@@ -70,3 +70,12 @@ def test_check_bsf_available_handles_errors(monkeypatch: pytest.MonkeyPatch, err
     monkeypatch.setattr(core.subprocess, "run", boom)
     assert core.check_bsf_available("h264_mp4toannexb") is False
     core.check_bsf_available.cache_clear()
+
+
+def test_concat_list_pins_first_segment_duration() -> None:
+    # The first segment's reported duration includes its start offset, which can differ
+    # from the second segment's (a long-held first frame gave 0.47 s vs 0.02 s), so the
+    # list states the true length: the split time.
+    listing = core.build_concat_list("/tmp/a/p1.mp4", "/tmp/a/p2.mp4", 90.549689)
+    assert listing == "file '/tmp/a/p1.mp4'\nduration 90.549689\nfile '/tmp/a/p2.mp4'\n"
+
