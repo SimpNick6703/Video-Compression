@@ -177,7 +177,7 @@ python build.py --verbose        # same, but keep build/ and *.spec for debuggin
 python build.py --clean-ffmpeg   # also delete the downloaded ffmpeg/ffprobe afterwards
 ```
 
-This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for the current platform. If `ffmpeg`/`ffprobe` are not already in the repository root, it downloads the newest [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) release: the highest FFmpeg version, then the highest revision (e.g. `ffmpeg-n9.0.2-r3`). It then checks that the binary contains the hardware filters this platform needs and the HDR tone-mapping filters (`zscale`, `tonemap`).
+This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for the current platform. If `ffmpeg`/`ffprobe` are not already in the repository root, it downloads the newest [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) release: the highest FFmpeg version, then the highest revision (e.g. `ffmpeg-n9.0.2-r2`). It then checks that the binary contains the hardware filters this platform needs and the HDR tone-mapping filters (`zscale`, `tonemap`).
 
 | Environment variable | Effect |
 |:---|:---|
