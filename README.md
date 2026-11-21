@@ -57,6 +57,7 @@ For using prebuilt binaries from releases, you just need to download the executa
 - In Windows:
   - Download any of the target filesize builds from [releases](https://github.com/SimpNick6703/Video-Compression/releases).
   - Drag and drop your video directly onto the executable (e.g., `100mb-hevc-win64.exe`). (Or run from terminal as `./{size}mb-{codec}-win64.exe <input.mp4> [output.mp4]`).
+  - Or install `VideoCompression-Setup-win64-<version>.exe` from [releases](https://github.com/SimpNick6703/Video-Compression/releases) to add a **Video-Compression** submenu (*Compress to 20 MB / 50 MB / 100 MB / 1 GB / Custom...*) to the right-click menu of video files. On Windows 11 it is under **Show more options**. The installer asks for the codec (HEVC or H.264); reinstall to change it. It installs for the current user only (no admin prompt), and uninstalling removes the menu.
 
 - In Linux:
   - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
@@ -92,6 +93,7 @@ python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--
 | `[output.mp4]` | `string` (Path) | No | `<input>_<size>MB.mp4` | Destination path for the compressed video. |
 | `[target_size_in_mb]` | `number` | No | `100` | Target file size threshold in megabytes (e.g. `20`, `50`, `100`, `1024`). Maps directly to Discord tiers: `20` MB (Free/Server Lvl 1), `50` MB (Server Lvl 2/Nitro Basic), `100` MB (Server Lvl 3), and `1024` MB ($10 Nitro). |
 | `[codec]` | `string` | No | `hevc` | Encoding codec: `hevc` (H.265, higher efficiency) or `h264` (H.264, broader compatibility). |
+| `--custom` | `flag` | No | `False` | Asks for the target size in MB at startup (used by the *Custom...* right-click entry). |
 | `--verbose`, `-v` | `flag` | No | `False` | Prints the decision trail live: encoder probes, pipeline tier, split point, bitrates and every FFmpeg command. Setting the environment variable `DEBUG=1` does the same. |
 
 Exit codes: `0` success, `1` failure (including "already smaller than target"), `130` cancelled with Ctrl+C. The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
@@ -186,7 +188,7 @@ This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for 
 |:---|:---|:---|
 | **CI** (`ci.yml`) | Pull requests, pushes to `main`, manual | `ruff check` and `pytest` on Python 3.11 and 3.13 |
 | **Deploy Architecture Page** (`deploy.yml`) | Pushes to `main` that change `docs/`, manual | Publishes `docs/` to GitHub Pages |
-| **Build & Release** (`release.yml`) | Creating a GitHub release, manual | Builds the executables on Windows, Linux and macOS; attaches them to the release (manual runs only keep them as run artifacts) |
+| **Build & Release** (`release.yml`) | Creating a GitHub release, manual | Builds the executables on Windows, Linux and macOS, plus the Windows installer; attaches them to the release (manual runs only keep them as run artifacts) |
 
 ### Releasing
 
@@ -225,14 +227,14 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 ## Roadmap
 
 - **HDR sources:** tone-map HDR10 and HLG videos to SDR so they look right after compression.
-- **Windows right-click menu:** an installer (and WinGet package) that adds *Compress to 20 MB / 50 MB / 100 MB / 1 GB / Custom...* to the right-click menu of video files.
+- **WinGet:** `winget install SimpNick6703.VideoCompression` for the right-click menu installer.
 - **PyPI:** `pip install videocompress`.
 
 ## Privacy Policy
 
 This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
-Video-Compression runs entirely offline: it reads the input video and writes the compressed video, plus an error log next to the input if a compression fails. The bundled FFmpeg is built with networking disabled. The program is portable: it installs nothing and changes no system settings, and deleting the executable removes it completely.
+Video-Compression runs entirely offline: it reads the input video and writes the compressed video, plus an error log next to the input if a compression fails. The bundled FFmpeg is built with networking disabled. The preset executables are portable: they install nothing and change no system settings, and deleting the executable removes it completely. The optional Windows installer adds the right-click menu entries under the current user's registry (`HKEY_CURRENT_USER\Software\Classes`), and its uninstaller removes them along with the installed files.
 
 ## License
 
