@@ -20,7 +20,12 @@
 
 #define AppName "Video-Compression"
 #define AppUrl "https://github.com/SimpNick6703/Video-Compression"
-#define MenuKey "Software\Classes\SystemFileAssociations\video\shell\VideoCompression"
+; Submenu entries live in one shared key; each extension's menu entry points at it.
+#define MenuKey "Software\Classes\VideoCompression.Menu"
+; Explorer ignores the perceived-type key (SystemFileAssociations\video) when another
+; app (e.g. VLC) owns the extension, so the menu is registered per extension.
+#dim Exts[14] {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv", ".flv", ".ts", ".mts", ".m2ts", ".3gp", ".mpg", ".mpeg"}
+#define i 0
 
 [Setup]
 AppId={{004B68D8-64A4-46FA-8982-4B69DF87D66F}
@@ -50,9 +55,16 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\THIRD_PARTY_NOTICES-win64.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
-Root: HKA; Subkey: "{#MenuKey}"; ValueType: string; ValueName: "MUIVerb"; ValueData: "{#AppName}"; Flags: uninsdeletekey
-Root: HKA; Subkey: "{#MenuKey}"; ValueType: string; ValueName: "SubCommands"; ValueData: ""
-Root: HKA; Subkey: "{#MenuKey}"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\videocompress.exe,0"
+#sub ExtEntry
+  #define ExtKey "Software\Classes\SystemFileAssociations\" + Exts[i]
+Root: HKA; Subkey: "{#ExtKey}"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "{#ExtKey}\shell"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "{#ExtKey}\shell\VideoCompression"; ValueType: string; ValueName: "MUIVerb"; ValueData: "{#AppName}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "{#ExtKey}\shell\VideoCompression"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\videocompress.exe,0"
+Root: HKA; Subkey: "{#ExtKey}\shell\VideoCompression"; ValueType: string; ValueName: "ExtendedSubCommandsKey"; ValueData: "VideoCompression.Menu"
+#endsub
+#for {i = 0; i < DimOf(Exts); i++} ExtEntry
+Root: HKA; Subkey: "{#MenuKey}"; Flags: uninsdeletekey
 ; Entries are listed in key-name order, hence the number prefixes.
 Root: HKA; Subkey: "{#MenuKey}\shell\1_20mb"; ValueType: string; ValueName: "MUIVerb"; ValueData: "Compress to 20 MB"
 Root: HKA; Subkey: "{#MenuKey}\shell\1_20mb\command"; ValueType: string; ValueData: """{app}\videocompress.exe"" ""%1"" 20 {code:GetCodec}"
