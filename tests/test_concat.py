@@ -79,3 +79,19 @@ def test_concat_list_pins_first_segment_duration() -> None:
     listing = core.build_concat_list("/tmp/a/p1.mp4", "/tmp/a/p2.mp4", 90.549689)
     assert listing == "file '/tmp/a/p1.mp4'\nduration 90.549689\nfile '/tmp/a/p2.mp4'\n"
 
+
+@pytest.mark.parametrize(
+    ("listing", "expected"),
+    [
+        (" A....D aac                  AAC (Advanced Audio Coding)\n", True),  # FFmpeg 9 flag layout
+        (" A..... aac                  AAC (Advanced Audio Coding)\n", True),
+        (" A....D aac_at               AAC (AudioToolbox)\n", False),
+        (" V....D libx264              H.264\n", False),
+        ("", False),
+    ],
+)
+def test_check_audio_encoder_available_parses_listing(
+    monkeypatch: pytest.MonkeyPatch, listing: str, expected: bool
+) -> None:
+    monkeypatch.setattr(core.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=listing))
+    assert core.check_audio_encoder_available("aac") is expected

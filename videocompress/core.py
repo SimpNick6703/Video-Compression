@@ -483,7 +483,11 @@ def check_audio_encoder_available(encoder_name: str = "aac") -> bool:
             text=True,
             env=get_clean_env(),
         )
-        return f"A..... {encoder_name}" in res.stdout or f"A...D. {encoder_name}" in res.stdout
+        # Rows are "<flags> <name> <description>"; the flag layout differs between FFmpeg versions.
+        return any(
+            len(parts) >= 2 and parts[0].startswith("A") and parts[1] == encoder_name
+            for parts in (line.split() for line in res.stdout.splitlines())
+        )
     except (subprocess.SubprocessError, OSError):
         return False
 
