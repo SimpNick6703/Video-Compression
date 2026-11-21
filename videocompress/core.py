@@ -588,6 +588,47 @@ def build_concat_cmd(
     ]
 
 
+LOADER_ERROR_MARKER = "error while loading shared libraries"
+RUNTIME_LIBRARY_HINT = (
+    "Install the VA-API runtime libraries and try again:\n"
+    "  Debian/Ubuntu: sudo apt install libva2 libva-drm2 libdrm2\n"
+    "  Fedora:        sudo dnf install libva libdrm\n"
+    "  Arch:          sudo pacman -S libva libdrm\n"
+    "  openSUSE:      sudo zypper install libva2 libva-drm2 libdrm2"
+)
+
+
+def find_missing_runtime_library(ffprobe_exe: str) -> Optional[str]:
+    """Return a user-facing message when FFmpeg cannot start for lack of a system library.
+
+    The Linux FFmpeg build links the VA-API libraries dynamically, so on systems
+    without them every FFmpeg call fails in the dynamic loader before it runs.
+
+    Args:
+        ffprobe_exe: Path to the ffprobe executable (linked like ffmpeg).
+
+    Returns:
+        The message naming the missing library with install commands, or None.
+
+    Example:
+        >>> find_missing_runtime_library("/nonexistent/ffprobe") is None
+        True
+    """
+    try:
+        res = subprocess.run(
+            [ffprobe_exe, "-version"], capture_output=True, text=True, timeout=10, env=get_clean_env(),
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.debug("ffprobe start check skipped: %s", e)
+        return None
+    stderr = res.stderr or ""
+    if res.returncode == 0 or LOADER_ERROR_MARKER not in stderr:
+        return None
+    detail = stderr.split(LOADER_ERROR_MARKER, 1)[1].strip(": \n").split(":", 1)[0]
+    log.error("FFmpeg cannot start: %s", stderr.strip())
+    return f"FFmpeg cannot start: missing system library {detail}.\n{RUNTIME_LIBRARY_HINT}"
+
+
 def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
     """Probe video metadata.
 

@@ -26,6 +26,7 @@ from videocompress.core import (
     get_file_size,
     clean_log_file,
     get_video_info,
+    find_missing_runtime_library,
     get_smart_split_point,
     get_optimal_settings,
     select_best_encoder,
@@ -332,6 +333,10 @@ def compress_video(
 
     if not os.path.exists(input_path):
         return False, f"Input not found: {input_path}"
+
+    missing_library = find_missing_runtime_library(get_resource_path("ffprobe"))
+    if missing_library:
+        return False, missing_library
 
     info = get_video_info(input_path)
     if not info:
