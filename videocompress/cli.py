@@ -3,6 +3,7 @@ Command-line interface for the video compression package.
 
 Usage:
     python -m videocompress <input.mp4> [output.mp4] [target_mb] [hevc/h264]
+    python -m videocompress <input.mp4> --custom [hevc/h264]   (asks for the size)
 """
 
 import sys
@@ -43,6 +44,29 @@ def _try_parse_positive_float(value: str) -> Optional[float]:
         return None
 
 
+def _prompt_target_mb() -> float:
+    """Ask on the console for a target size until a positive number is given.
+
+    Used by the Windows context menu's "Custom..." entry.
+
+    Returns:
+        The target size in megabytes.
+
+    Raises:
+        SystemExit: When the console input ends without an answer.
+    """
+    while True:
+        try:
+            answer = input("Target size in MB: ")
+        except EOFError:
+            sys.stderr.write("Error: no target size given.\n")
+            sys.exit(1)
+        target = _try_parse_positive_float(answer.strip())
+        if target is not None:
+            return target
+        sys.stdout.write("Enter a number greater than 0, for example 25.\n")
+
+
 def main() -> None:
     """Entry point for the command-line interface.
 
@@ -50,7 +74,7 @@ def main() -> None:
     compression engine.
     """
     if len(sys.argv) < 2:
-        sys.stdout.write("Usage: videocompress <input.mp4> [output.mp4] [size_in_mb] [hevc/h264] [--verbose]\n")
+        sys.stdout.write("Usage: videocompress <input.mp4> [output.mp4] [size_in_mb | --custom] [hevc/h264] [--verbose]\n")
         sys.exit(1)
 
     verbose = "--verbose" in sys.argv or "-v" in sys.argv or os.environ.get("DEBUG") == "1"
@@ -62,7 +86,8 @@ def main() -> None:
     target_mb: float = DEFAULT_TARGET_MB
     codec_type: str = "hevc"
 
-    raw_args = [a for a in sys.argv[1:] if a not in ("--verbose", "-v")]
+    custom_size = "--custom" in sys.argv
+    raw_args = [a for a in sys.argv[1:] if a not in ("--verbose", "-v", "--custom")]
     potential_paths: List[str] = []
 
     for arg_s in raw_args:
@@ -96,6 +121,8 @@ def main() -> None:
         sys.exit(1)
 
     inp_path = str(input_file)
+    if custom_size:
+        target_mb = _prompt_target_mb()
 
     try:
         success, result = compress_video(

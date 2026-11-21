@@ -44,6 +44,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python build.py
 
+      - name: Build Windows Installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BUILD_VERSION: ${{ github.ref_name }}
+        run: |
+          choco install innosetup -y --no-progress
+          $exe = Get-ChildItem dist -Filter "100mb-hevc-win64*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "100mb-hevc Windows executable not found in dist" }
+          $version = $env:BUILD_VERSION.TrimStart('v')
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DSourceExe=$($exe.FullName)" installer\windows.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
       # --- Upload Section ---
 
       - name: Upload Artifacts (to Actions Run)
