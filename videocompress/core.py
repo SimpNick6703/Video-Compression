@@ -517,8 +517,48 @@ def check_bsf_available(bsf_name: str) -> bool:
     return bsf_name in (line.strip() for line in res.stdout.splitlines())
 
 
-def build_concat_cmd(ffmpeg_exe: str, list_path: str, output_path: str, annexb_available: bool) -> List[str]:
-    """Build the stream-copy command that stitches split segments.
+def build_audio_args(audio_kbps: int, input_index: int = 0) -> List[str]:
+    """Build the audio mapping and codec arguments for an output.
+
+    Audio above 160 kbps is re-encoded to 128 kbps stereo AAC when the encoder
+    exists; otherwise the source audio is copied. Silent video drops audio.
+
+    Args:
+        audio_kbps: Probed audio bitrate in kbps (0 for silent video).
+        input_index: FFmpeg input number that carries the source audio.
+
+    Returns:
+        Arguments to append to an FFmpeg output.
+
+    Example:
+        >>> build_audio_args(0)
+        ['-an']
+        >>> build_audio_args(128, input_index=1)
+        ['-map', '1:a:0?', '-c:a', 'copy']
+    """
+    if audio_kbps == 0:
+        return ["-an"]
+    if audio_kbps > 160 and check_audio_encoder_available("aac"):
+        codec = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"]
+    else:
+        codec = ["-c:a", "copy"]
+    return ["-map", f"{input_index}:a:0?", *codec]
+
+
+def build_concat_cmd(
+    ffmpeg_exe: str,
+    list_path: str,
+    output_path: str,
+    annexb_available: bool,
+    source_path: str,
+    audio_kbps: int,
+) -> List[str]:
+    """Build the command that stitches video-only split segments and adds the source audio.
+
+    Segments are encoded without audio and the audio track is taken from the
+    source in one piece. Audio cut per segment ends on its own packet boundary,
+    which made the first segment longer than its video and opened a gap in the
+    video at the split.
 
     The concat demuxer converts H.264 through `h264_mp4toannexb`, which also
     tolerates differing parameter sets between segments. When the binary lacks
@@ -529,19 +569,22 @@ def build_concat_cmd(ffmpeg_exe: str, list_path: str, output_path: str, annexb_a
         list_path: Concat list file naming the segments in order.
         output_path: Destination video path.
         annexb_available: Whether `h264_mp4toannexb` exists in the binary.
+        source_path: Original input video, used for its audio track.
+        audio_kbps: Probed audio bitrate in kbps (0 for silent video).
 
     Returns:
         A command list ready for subprocess execution.
 
     Example:
-        >>> build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=False)[6:9]
+        >>> build_concat_cmd("ffmpeg", "list.txt", "out.mp4", False, "in.mp4", 0)[6:9]
         ['-safe', '0', '-auto_convert']
     """
     convert_args = [] if annexb_available else ["-auto_convert", "0"]
     return [
         ffmpeg_exe, "-hide_banner", "-v", "error",
         "-f", "concat", "-safe", "0", *convert_args, "-i", list_path,
-        "-c", "copy", "-movflags", "+faststart", "-y", output_path,
+        "-i", source_path, "-map", "0:v:0", *build_audio_args(audio_kbps, input_index=1),
+        "-c:v", "copy", "-movflags", "+faststart", "-y", output_path,
     ]
 
 
@@ -833,15 +876,7 @@ def build_single_pass_cmd(
     # Stream mapping
     cmd.extend(["-map", "0:v:0"])
 
-    # Audio Handling
-    if audio_kbps == 0:
-        cmd.append("-an")
-    else:
-        cmd.extend(["-map", "0:a:0?"])
-        if audio_kbps > 160 and check_audio_encoder_available("aac"):
-            cmd.extend(["-c:a", "aac", "-b:a", "128k", "-ac", "2"])
-        else:
-            cmd.extend(["-c:a", "copy"])
+    cmd.extend(build_audio_args(audio_kbps))
 
     # Single-pipe progress streaming on stderr
     cmd.extend([

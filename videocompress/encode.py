@@ -112,7 +112,7 @@ def _encode_hw_split(
                 output_path=p1_path,
                 tgt_h=opt_h,
                 tgt_fps=opt_fps,
-                audio_kbps=audio_kbps,
+                audio_kbps=0,  # audio is added from the source when stitching
                 tier=tier,
                 vaapi_node=vaapi_node,
             )
@@ -129,7 +129,7 @@ def _encode_hw_split(
                 output_path=p2_path,
                 tgt_h=opt_h,
                 tgt_fps=opt_fps,
-                audio_kbps=audio_kbps,
+                audio_kbps=0,  # audio is added from the source when stitching
                 tier=tier,
                 vaapi_node=vaapi_node,
             )
@@ -157,6 +157,8 @@ def _encode_hw_split(
                 concat_cmd = build_concat_cmd(
                     ffmpeg_exe, list_path, output_path,
                     annexb_available=check_bsf_available("h264_mp4toannexb"),
+                    source_path=input_path,
+                    audio_kbps=audio_kbps,
                 )
                 log.debug("Stitch command: %s", shlex.join(concat_cmd))
                 subprocess.run(

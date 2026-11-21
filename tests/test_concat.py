@@ -9,18 +9,38 @@ from videocompress import core
 
 
 def test_concat_keeps_auto_convert_when_annexb_bsf_present() -> None:
-    cmd = core.build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=True)
+    cmd = core.build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=True, source_path="in.mp4", audio_kbps=0)
     assert "-auto_convert" not in cmd
     assert cmd == [
         "ffmpeg", "-hide_banner", "-v", "error", "-f", "concat", "-safe", "0", "-i", "list.txt",
-        "-c", "copy", "-movflags", "+faststart", "-y", "out.mp4",
+        "-i", "in.mp4", "-map", "0:v:0", "-an",
+        "-c:v", "copy", "-movflags", "+faststart", "-y", "out.mp4",
     ]
 
 
 def test_concat_disables_auto_convert_without_annexb_bsf() -> None:
-    cmd = core.build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=False)
+    cmd = core.build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=False, source_path="in.mp4", audio_kbps=0)
     assert cmd[cmd.index("-auto_convert") + 1] == "0"
     assert cmd.index("-auto_convert") < cmd.index("-i")
+
+
+@pytest.mark.parametrize(
+    ("audio_kbps", "aac_available", "expected_audio"),
+    [
+        (128, True, ["-map", "1:a:0?", "-c:a", "copy"]),
+        (320, True, ["-map", "1:a:0?", "-c:a", "aac", "-b:a", "128k", "-ac", "2"]),
+        (320, False, ["-map", "1:a:0?", "-c:a", "copy"]),
+    ],
+)
+def test_concat_takes_audio_from_source(
+    monkeypatch: pytest.MonkeyPatch, audio_kbps: int, aac_available: bool, expected_audio: list[str]
+) -> None:
+    # Split segments are video-only; audio comes from the source in one piece so no gap opens at the split.
+    monkeypatch.setattr(core, "check_audio_encoder_available", lambda encoder_name="aac": aac_available)
+    cmd = core.build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=True, source_path="in.mp4", audio_kbps=audio_kbps)
+    start = cmd.index("0:v:0") + 1
+    assert cmd[start:start + len(expected_audio)] == expected_audio
+    assert cmd[cmd.index("-c:v") + 1] == "copy"
 
 
 @pytest.mark.parametrize(
