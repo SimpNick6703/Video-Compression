@@ -134,7 +134,7 @@ def test_compress_video_retries_with_legacy_end_to_end(
             return True, ""
         return False, "Split encode failed"
 
-    monkeypatch.setattr(encode, "get_video_info", lambda p: (10.0, 500 * 1024 * 1024, 60.0, 128, 1920, 1080))
+    monkeypatch.setattr(encode, "get_video_info", lambda p: (10.0, 500 * 1024 * 1024, 60.0, 128, 1920, 1080, "aac"))
     monkeypatch.setattr(encode, "select_best_encoder", lambda c: ("hevc_vaapi", [("hevc_vaapi", "selected")]))
     monkeypatch.setattr(encode, "resolve_vaapi_node", lambda enc: "/dev/dri/renderD128")
     monkeypatch.setattr(encode, "probe_pipeline_tier", lambda *a, **k: Tier.ZERO_COPY)

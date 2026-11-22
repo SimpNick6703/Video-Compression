@@ -35,6 +35,7 @@ from videocompress.core import (
     build_concat_cmd,
     build_concat_list,
     check_bsf_available,
+    plan_audio,
     probe_pipeline_tier,
     resolve_vaapi_node,
     calculate_video_bitrate,
@@ -70,6 +71,7 @@ def _encode_hw_split(
     tier: Tier = Tier.LEGACY,
     vaapi_node: Optional[str] = None,
     hdr: Optional[HdrSource] = None,
+    reencode_audio: bool = False,
 ) -> Tuple[bool, str]:
     """Execute parallel split single-pass encoding for hardware encoders.
 
@@ -82,7 +84,8 @@ def _encode_hw_split(
         target_size_mb: Total target size in megabytes.
         split_time: Timestamp in seconds marking the segment boundary.
         durs: Tuple of (first_segment_duration, second_segment_duration) in seconds.
-        audio_kbps: Probed audio bitrate in kbps.
+        audio_kbps: Audio bitrate of the output in kbps.
+        reencode_audio: Re-encode the audio instead of copying it.
         fps: Source frames per second.
         src_h: Source height in pixels.
         opt_h: Target height for scaling.
@@ -166,6 +169,7 @@ def _encode_hw_split(
                     annexb_available=check_bsf_available("h264_mp4toannexb"),
                     source_path=input_path,
                     audio_kbps=audio_kbps,
+                    reencode_audio=reencode_audio,
                 )
                 log.debug("Stitch command: %s", shlex.join(concat_cmd))
                 subprocess.run(
@@ -239,6 +243,7 @@ def _encode_cpu_single(
     opt_h: int,
     opt_fps: float,
     hdr: Optional[HdrSource] = None,
+    reencode_audio: bool = False,
 ) -> Tuple[bool, str]:
     """Execute serial single-pass encoding for CPU software fallback (libx265, libx264).
 
@@ -250,7 +255,8 @@ def _encode_cpu_single(
         codec_type: "hevc" or "h264".
         target_size_mb: Target size in megabytes.
         duration: Total duration in seconds.
-        audio_kbps: Probed audio bitrate in kbps.
+        audio_kbps: Audio bitrate of the output in kbps.
+        reencode_audio: Re-encode the audio instead of copying it.
         fps: Input frames per second.
         src_h: Source height in pixels.
         opt_h: Target height for scaling.
@@ -284,6 +290,7 @@ def _encode_cpu_single(
             tgt_h=opt_h,
             tgt_fps=opt_fps,
             audio_kbps=audio_kbps,
+            reencode_audio=reencode_audio,
             hdr=hdr,
         )
         log.debug("Bitrate: %s kbps", bitrate_k)
@@ -350,7 +357,12 @@ def compress_video(
     info = get_video_info(input_path)
     if not info:
         return False, f"Failed to extract video info from: {input_path}"
-    duration, orig_bytes, fps, audio_kbps, src_w, src_h = info
+    duration, orig_bytes, fps, source_audio_kbps, src_w, src_h, audio_codec = info
+    audio_kbps, reencode_audio = plan_audio(audio_codec, source_audio_kbps, target_size_mb, duration)
+    log.debug(
+        "Audio: %s %d kbps -> %s at %d kbps",
+        audio_codec or "none", source_audio_kbps, "AAC stereo" if reencode_audio else "copy", audio_kbps,
+    )
     hdr = get_hdr_source(input_path)
     log.debug("HDR source: %s", hdr or "none (SDR)")
 
@@ -409,6 +421,7 @@ def compress_video(
                 split_time=split_time,
                 durs=durs_tuple,
                 audio_kbps=audio_kbps,
+                reencode_audio=reencode_audio,
                 fps=fps,
                 src_h=src_h,
                 opt_h=opt_h,
@@ -436,6 +449,7 @@ def compress_video(
             target_size_mb=target_size_mb,
             duration=duration,
             audio_kbps=audio_kbps,
+            reencode_audio=reencode_audio,
             fps=fps,
             src_h=src_h,
             opt_h=opt_h,

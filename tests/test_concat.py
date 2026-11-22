@@ -25,19 +25,19 @@ def test_concat_disables_auto_convert_without_annexb_bsf() -> None:
 
 
 @pytest.mark.parametrize(
-    ("audio_kbps", "aac_available", "expected_audio"),
+    ("audio_kbps", "reencode", "expected_audio"),
     [
-        (128, True, ["-map", "1:a:0?", "-c:a", "copy"]),
-        (320, True, ["-map", "1:a:0?", "-c:a", "aac", "-b:a", "128k", "-ac", "2"]),
+        (128, False, ["-map", "1:a:0?", "-c:a", "copy"]),
+        (128, True, ["-map", "1:a:0?", "-c:a", "aac", "-b:a", "128k", "-ac", "2"]),
         (320, False, ["-map", "1:a:0?", "-c:a", "copy"]),
     ],
 )
-def test_concat_takes_audio_from_source(
-    monkeypatch: pytest.MonkeyPatch, audio_kbps: int, aac_available: bool, expected_audio: list[str]
-) -> None:
+def test_concat_takes_audio_from_source(audio_kbps: int, reencode: bool, expected_audio: list[str]) -> None:
     # Split segments are video-only; audio comes from the source in one piece so no gap opens at the split.
-    monkeypatch.setattr(core, "check_audio_encoder_available", lambda encoder_name="aac": aac_available)
-    cmd = core.build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=True, source_path="in.mp4", audio_kbps=audio_kbps)
+    cmd = core.build_concat_cmd(
+        "ffmpeg", "list.txt", "out.mp4", annexb_available=True, source_path="in.mp4",
+        audio_kbps=audio_kbps, reencode_audio=reencode,
+    )
     start = cmd.index("0:v:0") + 1
     assert cmd[start:start + len(expected_audio)] == expected_audio
     assert cmd[cmd.index("-c:v") + 1] == "copy"

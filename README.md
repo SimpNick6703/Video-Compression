@@ -78,6 +78,8 @@ For using prebuilt binaries from releases, you just need to download the executa
 > **HDR videos (HDR10 and HLG):** with a GPU encoder, HEVC keeps the video in HDR at its original bit depth (10-bit stays 10-bit, 8-bit stays 8-bit). H.264, and HEVC on the CPU encoder, convert it to standard colours (SDR) so it looks right on every screen and player. That conversion runs on the CPU, so it is slower: an 8.8 s 4K60 HDR clip took 32 s instead of 7 s on an RTX 4060 laptop.
 >
 > **AV1 videos** can be compressed too (the output is still HEVC or H.264).
+>
+> **Audio** is copied untouched, unless it is lossless (PCM, FLAC) or is above 160 kbps and would take more than 10% of the target size. It is then re-encoded to 128 kbps stereo AAC and the saved bits go to the video. Audio the bundled FFmpeg cannot decode (for example ALAC) is always copied.
 
 ## How to Run (Python CLI)
 
@@ -229,7 +231,7 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 
 - **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically. Desktop distributions ship them by default; minimal server, container and WSL installs may not. Without them, versions before v1.3.0 fail with a "cannot open shared object file" error; from v1.3.0, the executable stops with a message naming the missing library and the install command for your distribution (for example `sudo apt install libva2 libva-drm2 libdrm2`).
 - **Unsupported inputs:** the bundled FFmpeg cannot read `.ts`, `.mts`, `.m2ts`, `.wmv`, `.mpg` and `.mpeg` files, or VP8 (some `.webm`), ProRes (some `.mov`) and FLV1 (old `.flv`) video.
-- **Size overshoot with lossless audio that reports no bitrate** (for example FLAC in `.mkv`): the audio is counted as 128 kbps but copied at its real bitrate, so the output can be well over the target.
+- **Lossless audio the bundled FFmpeg cannot decode** (ALAC, big-endian PCM) is copied at its full bitrate (up to about 11 MB per minute for 16-bit 48 kHz stereo), which leaves less room for the video at small targets.
 
 ## Roadmap
 
