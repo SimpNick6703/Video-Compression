@@ -57,7 +57,7 @@ For using prebuilt binaries from releases, you just need to download the executa
 - In Windows:
   - Download any of the target filesize builds from [releases](https://github.com/SimpNick6703/Video-Compression/releases).
   - Drag and drop your video directly onto the executable (e.g., `100mb-hevc-win64.exe`). (Or run from terminal as `./{size}mb-{codec}-win64.exe <input.mp4> [output.mp4]`).
-  - Or install `VideoCompression-Setup-win64-<version>.exe` from [releases](https://github.com/SimpNick6703/Video-Compression/releases) to add a **Video-Compression** submenu (*Compress to 20 MB / 50 MB / 100 MB / 1 GB / Custom...*) to the right-click menu of video files. On Windows 11 it is under **Show more options**. The installer asks for the codec (HEVC or H.264); reinstall to change it. It installs for the current user only (no admin prompt), and uninstalling removes the menu.
+  - Or install `VideoCompression-Setup-win64-<version>.exe` from [releases](https://github.com/SimpNick6703/Video-Compression/releases) to add a **Video-Compression** submenu (*Compress to 20 MB / 50 MB / 100 MB / 1 GB / Custom...*) to the right-click menu of `.mp4`, `.mkv`, `.mov`, `.avi`, `.webm`, `.m4v`, `.flv` and `.3gp` files. On Windows 11 it is under **Show more options**. The installer asks for the codec (HEVC or H.264); reinstall to change it. It installs for the current user only (no admin prompt), and uninstalling removes the menu.
 
 - In Linux:
   - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
@@ -227,7 +227,9 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 
 ## Known Issues
 
-- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically. Desktop distributions ship them by default; minimal server, container and WSL installs may not. Without them, released versions fail with a "cannot open shared object file" error; from the next release, the executable stops with a message naming the missing library and the install command for your distribution (for example `sudo apt install libva2 libva-drm2 libdrm2`).
+- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically. Desktop distributions ship them by default; minimal server, container and WSL installs may not. Without them, versions before v1.3.0 fail with a "cannot open shared object file" error; from v1.3.0, the executable stops with a message naming the missing library and the install command for your distribution (for example `sudo apt install libva2 libva-drm2 libdrm2`).
+- **Unsupported inputs:** the bundled FFmpeg cannot read `.ts`, `.mts`, `.m2ts`, `.wmv`, `.mpg` and `.mpeg` files, or VP8 (some `.webm`), ProRes (some `.mov`) and FLV1 (old `.flv`) video.
+- **Size overshoot with lossless audio that reports no bitrate** (for example FLAC in `.mkv`): the audio is counted as 128 kbps but copied at its real bitrate, so the output can be well over the target.
 
 ## Roadmap
 

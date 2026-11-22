@@ -29,7 +29,9 @@
 #define MenuKey "Software\Classes\VideoCompression.Menu"
 ; Explorer ignores the perceived-type key (SystemFileAssociations\video) when another
 ; app (e.g. VLC) owns the extension, so the menu is registered per extension.
-#dim Exts[14] {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv", ".flv", ".ts", ".mts", ".m2ts", ".3gp", ".mpg", ".mpeg"}
+#dim Exts[8] {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv", ".3gp"}
+; v1.3.0-rc1 and rc2 also registered these, which the bundled FFmpeg cannot read.
+#dim RemovedExts[6] {".wmv", ".ts", ".mts", ".m2ts", ".mpg", ".mpeg"}
 #define i 0
 
 [Setup]
@@ -71,6 +73,10 @@ Root: HKA; Subkey: "{#ExtKey}\shell\VideoCompression"; ValueType: string; ValueN
 Root: HKA; Subkey: "{#ExtKey}\shell\VideoCompression"; ValueType: string; ValueName: "ExtendedSubCommandsKey"; ValueData: "VideoCompression.Menu"
 #endsub
 #for {i = 0; i < DimOf(Exts); i++} ExtEntry
+#sub RemovedExtEntry
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\{#RemovedExts[i]}\shell\VideoCompression"; ValueType: none; Flags: deletekey
+#endsub
+#for {i = 0; i < DimOf(RemovedExts); i++} RemovedExtEntry
 Root: HKA; Subkey: "{#MenuKey}"; Flags: uninsdeletekey
 ; Entries are listed in key-name order, hence the number prefixes.
 Root: HKA; Subkey: "{#MenuKey}\shell\1_20mb"; ValueType: string; ValueName: "MUIVerb"; ValueData: "Compress to 20 MB"
