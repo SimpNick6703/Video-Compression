@@ -132,7 +132,7 @@ def main() -> None:
             codec_type=codec_type,
         )
         if not success:
-            if result and "Cancelled" not in result:
+            if result:
                 sys.stderr.write(f"Compression failed: {result}\n")
             _save_error_log(log_buffer, inp_path)
             sys.exit(1)

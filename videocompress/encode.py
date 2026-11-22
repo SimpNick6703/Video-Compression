@@ -14,8 +14,9 @@ import shlex
 import tempfile
 import subprocess
 import logging
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Tuple, Optional
+from typing import Callable, Iterator, Tuple, Optional
 
 from rich.rule import Rule
 
@@ -52,6 +53,42 @@ from videocompress.progress import (
 )
 
 log = logging.getLogger(__name__)
+
+
+@contextmanager
+def _discard_output_on_cancel(output_path: str) -> Iterator[None]:
+    """Delete the output if Ctrl+C interrupts the block after FFmpeg started writing it.
+
+    A file that was already at the path and is still untouched is kept.
+
+    Args:
+        output_path: File written inside the block.
+
+    Yields:
+        Nothing.
+
+    Example:
+        >>> with _discard_output_on_cancel("out.mp4"):
+        ...     pass
+    """
+    def state() -> Optional[Tuple[int, int]]:
+        try:
+            info = os.stat(output_path)
+        except OSError:
+            return None
+        return info.st_size, info.st_mtime_ns
+
+    before = state()
+    try:
+        yield
+    except KeyboardInterrupt:
+        after = state()
+        if after and after != before:
+            try:
+                os.remove(output_path)
+            except OSError as e:
+                log.warning("Could not remove the partial output %s: %s", output_path, e)
+        raise
 
 
 def _encode_hw_split(
@@ -310,7 +347,7 @@ def _encode_cpu_single(
         return (True, "") if success else (False, "CPU Encode Failed")
     except KeyboardInterrupt:
         console.print("\n[bold red]Cancelling...[/]")
-        return False, "Cancelled by user"
+        raise
     except Exception as e:
         log.exception("CPU single-pass encode error")
         return False, f"CPU encode error: {e}"
@@ -410,28 +447,29 @@ def compress_video(
         durs_tuple = (split_time, duration - split_time)
         split_info = f"{durs_tuple[0]:.1f}s + {durs_tuple[1]:.1f}s"
 
-        ok, err, tier = _encode_hw_with_fallback(
-            lambda t: _encode_hw_split(
-                ffmpeg_exe=ffmpeg_exe,
-                input_path=input_path,
-                output_path=output_path,
-                active_encoder=active_encoder,
-                codec_type=codec_type,
-                target_size_mb=target_size_mb,
-                split_time=split_time,
-                durs=durs_tuple,
-                audio_kbps=audio_kbps,
-                reencode_audio=reencode_audio,
-                fps=fps,
-                src_h=src_h,
-                opt_h=opt_h,
-                opt_fps=opt_fps,
-                tier=t,
-                vaapi_node=vaapi_node,
-                hdr=hdr,
-            ),
-            tier,
-        )
+        with _discard_output_on_cancel(output_path):
+            ok, err, tier = _encode_hw_with_fallback(
+                lambda t: _encode_hw_split(
+                    ffmpeg_exe=ffmpeg_exe,
+                    input_path=input_path,
+                    output_path=output_path,
+                    active_encoder=active_encoder,
+                    codec_type=codec_type,
+                    target_size_mb=target_size_mb,
+                    split_time=split_time,
+                    durs=durs_tuple,
+                    audio_kbps=audio_kbps,
+                    reencode_audio=reencode_audio,
+                    fps=fps,
+                    src_h=src_h,
+                    opt_h=opt_h,
+                    opt_fps=opt_fps,
+                    tier=t,
+                    vaapi_node=vaapi_node,
+                    hdr=hdr,
+                ),
+                tier,
+            )
         mode_str = f"parallel split \u00b7 {tier.label}{hdr_info}"
         if not ok:
             clean_log_file()
@@ -440,22 +478,23 @@ def compress_video(
     # Branch 2: CPU Fallback (Serial Single-Pass)
     else:
         mode_str = f"CPU single-pass{hdr_info}"
-        ok, err = _encode_cpu_single(
-            ffmpeg_exe=ffmpeg_exe,
-            input_path=input_path,
-            output_path=output_path,
-            active_encoder=active_encoder,
-            codec_type=codec_type,
-            target_size_mb=target_size_mb,
-            duration=duration,
-            audio_kbps=audio_kbps,
-            reencode_audio=reencode_audio,
-            fps=fps,
-            src_h=src_h,
-            opt_h=opt_h,
-            opt_fps=opt_fps,
-            hdr=hdr,
-        )
+        with _discard_output_on_cancel(output_path):
+            ok, err = _encode_cpu_single(
+                ffmpeg_exe=ffmpeg_exe,
+                input_path=input_path,
+                output_path=output_path,
+                active_encoder=active_encoder,
+                codec_type=codec_type,
+                target_size_mb=target_size_mb,
+                duration=duration,
+                audio_kbps=audio_kbps,
+                reencode_audio=reencode_audio,
+                fps=fps,
+                src_h=src_h,
+                opt_h=opt_h,
+                opt_fps=opt_fps,
+                hdr=hdr,
+            )
         if not ok:
             clean_log_file()
             return False, err

@@ -103,7 +103,7 @@ python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--
 | `--custom` | `flag` | No | `False` | Asks for the target size in MB at startup (used by the *Custom...* right-click entry). |
 | `--verbose`, `-v` | `flag` | No | `False` | Prints the decision trail live: encoder probes, pipeline tier, split point, bitrates and every FFmpeg command. Setting the environment variable `DEBUG=1` does the same. |
 
-Exit codes: `0` success, `1` failure (including "already smaller than target"), `130` cancelled with Ctrl+C (`1` if cancelled during a CPU encode). The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
+Exit codes: `0` success, `1` failure (including "already smaller than target"), `130` cancelled with Ctrl+C (the partial output is removed). The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
 
 > [!TIP]
 > **Invocation and argument order are flexible:**
