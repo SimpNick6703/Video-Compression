@@ -120,6 +120,7 @@ begin
     '<a href="{#HdrInfoUrl}">Learn more in the Architecture Explorer</a>';
   Note.OnLinkClick := @OpenLink;
   Note.Parent := CodecPage.Surface;
+  Note.TabStop := True;  { keyboard access to the link }
   Note.AdjustHeight;
 end;
 
