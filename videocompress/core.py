@@ -870,12 +870,41 @@ def get_hdr_source(input_path: str) -> Optional[HdrSource]:
     transfer = stream.get("color_transfer", "")
     if transfer not in HDR_TRANSFERS:
         return None
+    tags = read_first_frame_color(input_path) or stream
     return HdrSource(
         transfer,
         is_high_bit_depth(stream.get("pix_fmt", "")),
-        has_primaries=stream.get("color_primaries", "") not in UNTAGGED_COLOR,
-        has_matrix=stream.get("color_space", "") not in UNTAGGED_COLOR,
+        has_transfer=tags.get("color_transfer", "") not in UNTAGGED_COLOR,
+        has_primaries=tags.get("color_primaries", "") not in UNTAGGED_COLOR,
+        has_matrix=tags.get("color_space", "") not in UNTAGGED_COLOR,
     )
+
+
+def read_first_frame_color(input_path: str) -> Optional[Mapping[str, str]]:
+    """Return the first decoded frame's colour tags, which are what FFmpeg filters see.
+
+    The stream entry can show the container's tags while the frames have none.
+
+    Args:
+        input_path: Path to the input media file.
+
+    Returns:
+        The frame's fields, or None if no frame could be decoded.
+
+    Example:
+        >>> read_first_frame_color("missing.mp4") is None
+        True
+    """
+    cmd = [
+        get_resource_path("ffprobe"), "-v", "error", "-read_intervals", "%+#1", "-select_streams", "v:0",
+        "-show_entries", "frame=color_transfer,color_primaries,color_space", "-of", "json", input_path,
+    ]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env())
+        return json.loads(out)["frames"][0]
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError, IndexError) as e:
+        log.debug("Could not read the first frame's colour tags: %r", e)
+        return None
 
 
 def is_high_bit_depth(pix_fmt: str) -> bool:

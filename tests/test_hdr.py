@@ -128,13 +128,50 @@ def test_hdr_source_notes_missing_color_tags(
     stream = {"color_transfer": "arib-std-b67", "pix_fmt": "yuv420p10le", **tags}
 
     def fake_probe(cmd: list, **kwargs: object) -> str:
-        assert "stream=color_transfer,pix_fmt,color_primaries,color_space" in cmd
+        if "frame=color_transfer,color_primaries,color_space" in cmd:
+            return json.dumps({"frames": [stream]})
         return json.dumps({"streams": [stream]})
 
     monkeypatch.setattr(core.subprocess, "check_output", fake_probe)
     hdr = core.get_hdr_source("in.mp4")
     assert hdr is not None
     assert (hdr.has_primaries, hdr.has_matrix) == (has_primaries, has_matrix)
+
+
+def test_container_only_tags_count_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # ffprobe's stream entry shows the container's tags, but zscale only sees the frames'.
+    stream = {
+        "color_transfer": "arib-std-b67", "color_primaries": "bt2020", "color_space": "bt2020nc",
+        "pix_fmt": "yuv420p10le",
+    }
+    frame = {"color_transfer": "unknown"}
+
+    def fake_probe(cmd: list, **kwargs: object) -> str:
+        if "frame=color_transfer,color_primaries,color_space" in cmd:
+            return json.dumps({"frames": [frame]})
+        return json.dumps({"streams": [stream]})
+
+    monkeypatch.setattr(core.subprocess, "check_output", fake_probe)
+    hdr = core.get_hdr_source("in.mp4")
+    assert hdr is not None
+    assert (hdr.has_transfer, hdr.has_primaries, hdr.has_matrix) == (False, False, False)
+    assert linearize_step(hdr) == "zscale=t=linear:npl=100:agamma=0:tin=arib-std-b67:pin=bt2020:p=bt2020:min=bt2020nc"
+
+
+def test_stream_tags_are_used_when_no_frame_decodes(monkeypatch: pytest.MonkeyPatch) -> None:
+    stream = {"color_transfer": "smpte2084", "color_primaries": "bt2020", "color_space": "bt2020nc"}
+
+    def fake_probe(cmd: list, **kwargs: object) -> str:
+        if "frame=color_transfer,color_primaries,color_space" in cmd:
+            return json.dumps({"frames": []})
+        return json.dumps({"streams": [stream]})
+
+    monkeypatch.setattr(core.subprocess, "check_output", fake_probe)
+    assert core.get_hdr_source("in.mp4") == HdrSource("smpte2084", ten_bit=False)
+
+
+def test_pq_with_untagged_transfer_is_assumed_pq() -> None:
+    assert linearize_step(PQ._replace(has_transfer=False)) == "zscale=t=linear:npl=100:tin=smpte2084"
 
 
 def test_bit_depth_from_pix_fmt() -> None:

@@ -367,12 +367,14 @@ class HdrSource(NamedTuple):
     Attributes:
         transfer: `smpte2084` (PQ, HDR10) or `arib-std-b67` (HLG).
         ten_bit: True when the source has more than 8 bits per sample.
-        has_primaries: False when the colour primaries are untagged.
-        has_matrix: False when the YCbCr matrix is untagged.
+        has_transfer: False when only the container, not the frames, carries the transfer.
+        has_primaries: False when the frames' colour primaries are untagged.
+        has_matrix: False when the frames' YCbCr matrix is untagged.
     """
 
     transfer: str
     ten_bit: bool
+    has_transfer: bool = True
     has_primaries: bool = True
     has_matrix: bool = True
 
@@ -409,6 +411,8 @@ def _tonemap_filters(hdr: HdrSource) -> Tuple[str, ...]:
         # The default agamma=1 applies HLG's system gamma per channel. Not for PQ: no gain, 2.5x slower.
         linearize += ":agamma=0"
     # zscale refuses untagged sources; HDR10 and HLG are BT.2020.
+    if not hdr.has_transfer:
+        linearize += f":tin={hdr.transfer}"
     if not hdr.has_primaries:
         linearize += ":pin=bt2020:p=bt2020"
     if not hdr.has_matrix:
