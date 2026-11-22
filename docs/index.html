@@ -1389,12 +1389,55 @@ format=gbrpf32le</pre>
                     <strong>Takeaway:</strong>
                     Keeping HDR costs almost no CPU. Converting HDR10 is 2&ndash;4 times slower (HLG more) and uses most of the CPU, so choose HEVC for HDR videos unless the viewer needs H.264. Audio is copied unless it is lossless or takes over 10% of a small target (and is above 160 kbps). Then it becomes 128 kbps AAC and the video gets the saved bits, for about 4 extra seconds on a 3-minute clip.
                 </p>
-                <p class="df-sub mt-3">
-                    Further reading:
-                    <a href="https://www.itu.int/rec/R-REC-BT.2100" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">ITU-R BT.2100 (PQ and HLG)</a>,
-                    <a href="https://www.itu.int/pub/R-REP-BT.2408" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">ITU-R BT.2408 (HDR production)</a>,
-                    <a href="https://developer.nvidia.com/video-encode-decode-support-matrix" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">NVIDIA encode and decode support</a>.
-                </p>
+                <div class="df-card overflow-hidden mt-4">
+                    <div class="df-card-head">
+                        <span class="df-card-title">Further reading</span>
+                        <span class="df-sub">Explainers, from the basics to tone curves</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table df-table-text">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Topic</th>
+                                    <th scope="col">Article</th>
+                                    <th scope="col">What it explains</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Video codecs</th>
+                                    <td><a href="https://github.com/leandromoreira/digital_video_introduction" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">A hands-on introduction to video technology</a><span class="df-sub block">Leandro Moreira</span></td>
+                                    <td>Builds a codec step by step, with pictures</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Gamma</th>
+                                    <td><a href="https://blog.johnnovak.net/2016/09/21/what-every-coder-should-know-about-gamma/" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">What every coder should know about gamma</a><span class="df-sub block">John Novak</span></td>
+                                    <td>Why stored numbers are not light</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR and bit depth</th>
+                                    <td><a href="https://android-developers.googleblog.com/2025/08/what-is-hdr.html" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">What is HDR?</a><span class="df-sub block">John Reck, Android Developers</span></td>
+                                    <td>Banding, gamut, PQ against HLG and common myths</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Color tags</th>
+                                    <td><a href="https://www.mux.com/blog/your-browser-and-my-browser-see-different-colors" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">Your browser and my browser see different colors</a><span class="df-sub block">Matthew Szatmary, Mux</span></td>
+                                    <td>Screenshots of missing tags changing colors</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR to SDR</th>
+                                    <td><a href="https://www.mpegflow.com/topics/color/hdr-to-sdr-conversion" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">HDR to SDR conversion</a><span class="df-sub block">MpegFlow</span></td>
+                                    <td>The zscale and tonemap chain, stage by stage</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Tone curves</th>
+                                    <td><a href="https://64.github.io/tonemapping/" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">Tone mapping</a><span class="df-sub block">delta blog</span></td>
+                                    <td>Reinhard, Hable and ACES compared on one image</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
         </section>
@@ -1431,6 +1474,263 @@ format=gbrpf32le</pre>
                     </div>
                     <p class="text-xs text-slate-500 mt-4 text-center"><i class="fa-solid fa-circle-info mr-1"></i> Abstract relative duration showing multithreaded efficiency.</p>
                 </div>
+            </div>
+
+            <!-- WHICH PATH EACH INPUT TAKES -->
+            <div id="sec-engine-paths" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">Decision table</p>
+                    <h3 class="df-title">What runs for your video</h3>
+                    <p class="df-lead">The input codec decides where decoding runs. The color, output codec and available encoder decide everything after that. Find your input in the first table, then follow its row in the second.</p>
+                    <p class="df-sub mt-3"><span class="text-emerald-400 font-bold">GPU</span> is hardware accelerated, <span class="text-amber-300 font-bold">CPU</span> is software, <span class="text-cyan-300 font-bold">GPU or CPU</span> depends on the hardware.</p>
+                </div>
+
+                <div class="df-card overflow-hidden">
+                    <div class="df-card-head">
+                        <span class="df-card-title">1. Where the input is decoded</span>
+                        <span class="df-sub">Needs a GPU that supports the format</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Input video</th>
+                                    <th scope="col">NVIDIA<span class="df-sub block">Tested on RTX 4060</span></th>
+                                    <th scope="col">AMD and Intel<span class="df-sub block">Tested on UHD 630, Linux</span></th>
+                                    <th scope="col">Apple<span class="df-sub block">Not tested</span></th>
+                                    <th scope="col">No GPU</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">H.264<span class="df-sub block">8-bit 4:2:0</span></th>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">H.264<span class="df-sub block">10-bit or 4:2:2</span></th>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most Macs</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HEVC<span class="df-sub block">8-bit or 10-bit 4:2:0</span></th>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HEVC<span class="df-sub block">4:2:2</span></th>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">Depends on the Mac</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">AV1<span class="df-sub block">8-bit or 10-bit</span></th>
+                                    <td class="text-emerald-400">GPU<span class="df-sub block">RTX 30 or newer, else CPU</span></td>
+                                    <td class="text-emerald-400">GPU<span class="df-sub block">RX 6000 or 11th Gen+, else CPU</span></td>
+                                    <td class="text-emerald-400">GPU<span class="df-sub block">M3 or newer, else CPU</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">VP9, MPEG-4<span class="df-sub block">Any depth</span></th>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="df-card overflow-hidden mt-4">
+                    <div class="df-card-head">
+                        <span class="df-card-title">2. What happens after that</span>
+                        <span class="df-sub">Scaling only runs when the target size needs it</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Input</th>
+                                    <th scope="col">Output</th>
+                                    <th scope="col">GPU encoder</th>
+                                    <th scope="col">Decode</th>
+                                    <th scope="col">Scale</th>
+                                    <th scope="col">HDR to SDR</th>
+                                    <th scope="col">Encode</th>
+                                    <th scope="col">Result</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row" rowspan="4">SDR 8-bit<span class="df-sub block">Any input codec</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="4">SDR 10-bit<span class="df-sub block">Any input codec</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit<span class="df-sub block">10-bit on NVENC if not scaled</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 10-bit on Windows<span class="df-sub block">8-bit on Linux and macOS</span></td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="4">HDR 8-bit<span class="df-sub block">HDR10 or HLG</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-emerald-400">HDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">Always CPU on VA-API</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="4">HDR 10-bit<span class="df-sub block">HDR10 or HLG</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-emerald-400">HDR 10-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">Always CPU on VA-API</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <p class="df-callout mt-4">
+                    <strong>The rule to remember:</strong>
+                    HDR survives only as HEVC from a GPU encoder. Every other HDR path is converted to SDR on the CPU, even when a GPU does the encoding. <a href="#sec-color-decisions" class="text-cyan-300 underline hover:text-cyan-200">See why</a>.
+                </p>
+
+                <details class="df-details df-card mt-4">
+                    <summary>Exceptions and how this was tested</summary>
+                    <div class="df-details-body space-y-3">
+                        <p><strong>Pipeline names:</strong> when decoding, scaling and encoding all run on the GPU the app calls it <span class="df-code">zero-copy</span>. CPU decoding followed by GPU work is <span class="df-code">upload</span>. On NVENC without scaling, the app can show <span class="df-code">zero-copy</span> although the CPU decoded.</p>
+                        <p><strong>Failed GPU pipeline:</strong> the app retries once with <span class="df-code">legacy</span>, which scales on the CPU except on NVENC. It does not switch to a CPU encoder, and HDR to SDR has no retry.</p>
+                        <p><strong>Very wide videos:</strong> an encode that stays wider than the GPU encoder supports fails. For most H.264 encoders that is 4,096 pixels, and some older GPUs have a similar limit for HEVC.</p>
+                        <p><strong>10-bit SDR:</strong> NVENC keeps 10-bit only for unscaled 4:2:0 HEVC, and VideoToolbox follows the decoded frames. The bundled x265 is 10-bit capable only on Windows.</p>
+                        <p><strong>4:2:2 color:</strong> output is 4:2:0, except HEVC on the CPU encoder, which keeps SDR sources in 4:2:2.</p>
+                        <p><strong>HDR detection:</strong> only the PQ and HLG transfer tags count. Untagged HDR and Dolby Vision profile 5 are treated as SDR.</p>
+                        <p><strong>Tested:</strong> 464 real encodes with the bundled FFmpeg n9.1. They cover 29 inputs (H.264, HEVC, AV1, VP9 and MPEG-4 in SDR, HDR10 and HLG), both output codecs, scaled and unscaled, on NVENC (RTX 4060, Windows), VA-API (Intel UHD 630, Linux) and both CPU encoders. AMF, QSV and VideoToolbox rows follow the code and vendor support, and were not run.</p>
+                    </div>
+                </details>
             </div>
         </section>
 
