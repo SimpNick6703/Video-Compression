@@ -25,6 +25,7 @@
 
 #define AppName "Video-Compression"
 #define AppUrl "https://github.com/SimpNick6703/Video-Compression"
+#define HdrInfoUrl "https://simpnick6703.github.io/Video-Compression/#sec-color-decisions"
 ; Submenu entries live in one shared key; each extension's menu entry points at it.
 #define MenuKey "Software\Classes\VideoCompression.Menu"
 ; Explorer ignores the perceived-type key (SystemFileAssociations\video) when another
@@ -94,6 +95,34 @@ Root: HKA; Subkey: "{#MenuKey}\shell\5_custom\command"; ValueType: string; Value
 var
   CodecPage: TInputOptionWizardPage;
 
+procedure OpenLink(Sender: TObject; const Link: string; LinkType: TSysLinkType);
+var
+  ErrorCode: Integer;
+begin
+  if not ShellExecAsOriginalUser('open', Link, '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode) then
+    MsgBox('Could not open the link. Visit:' + #13#10 + Link, mbInformation, MB_OK);
+end;
+
+procedure AddHdrNote;
+var
+  Note: TNewLinkLabel;
+begin
+  { The option list fills the page by default, so shrink it to make room. }
+  CodecPage.CheckListBox.Height := ScaleY(56);
+  Note := TNewLinkLabel.Create(CodecPage);
+  Note.AutoSize := False;
+  Note.Left := CodecPage.CheckListBox.Left;
+  Note.Top := CodecPage.CheckListBox.Top + CodecPage.CheckListBox.Height + ScaleY(8);
+  Note.Width := CodecPage.CheckListBox.Width;
+  Note.Caption :=
+    'Note: H.264 output is never HDR. HDR videos are always converted to SDR on the CPU, ' +
+    'even if you have a GPU, which is slower. Choose HEVC to keep HDR (needs a GPU encoder). ' +
+    '<a href="{#HdrInfoUrl}">Learn more in the Architecture Explorer</a>';
+  Note.OnLinkClick := @OpenLink;
+  Note.Parent := CodecPage.Surface;
+  Note.AdjustHeight;
+end;
+
 procedure InitializeWizard;
 begin
   CodecPage := CreateInputOptionPage(wpLicense,
@@ -106,6 +135,7 @@ begin
     CodecPage.SelectedValueIndex := 1
   else
     CodecPage.SelectedValueIndex := 0;
+  AddHdrNote;
 end;
 
 function GetCodec(Param: string): string;
