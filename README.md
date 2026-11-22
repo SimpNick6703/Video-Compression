@@ -96,8 +96,8 @@ python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--
 
 | Parameter | Type | Required | Default | Description |
 |:---|:---|:---|:---|:---|
-| `<input.mp4>` | `string` (Path) | **Yes** | — | Path to the source video file. Must exist on disk. |
-| `[output.mp4]` | `string` (Path) | No | `<input>_<size>MB.mp4` | Destination path for the compressed video. |
+| `<input.mp4>` | `string` (Path) | **Yes** | — | Path to the source video file, including its extension. Must exist on disk. |
+| `[output.mp4]` | `string` (Path) | No | `<input>_<size>MB.mp4` | Destination file for the compressed video, including its extension. A folder is not accepted. |
 | `[target_size_in_mb]` | `number` | No | `100` | Target file size threshold in megabytes (e.g. `20`, `50`, `100`, `1024`). Maps directly to Discord tiers: `20` MB (Free/Server Lvl 1), `50` MB (Server Lvl 2/Nitro Basic), `100` MB (Server Lvl 3), and `1024` MB ($10 Nitro). |
 | `[codec]` | `string` | No | `hevc` | Encoding codec: `hevc` (H.265, higher efficiency) or `h264` (H.264, broader compatibility). |
 | `--custom` | `flag` | No | `False` | Asks for the target size in MB at startup (used by the *Custom...* right-click entry). |
@@ -108,7 +108,8 @@ Exit codes: `0` success, `1` failure (including "already smaller than target"), 
 > [!TIP]
 > **Invocation and argument order are flexible:**
 > * You can invoke the CLI either directly by package directory (`python videocompress ...`) or as a module (`python -m videocompress ...`).
-> * Optional arguments can be provided in any order (e.g. `python videocompress input.mp4 50 hevc` or `python videocompress input.mp4 hevc 50`). The CLI automatically detects arguments by type: numeric values as target MB size, `hevc`/`h264` as the codec, existing file paths as the input, and any additional path as the output destination.
+> * Optional arguments can be provided in any order (e.g. `python videocompress input.mp4 50 hevc` or `python videocompress input.mp4 hevc 50`). The CLI automatically detects arguments by type: numeric values as target MB size, `hevc`/`h264` as the codec, and names with a file extension as paths (the first that exists is the input, the other is the output).
+> * File names always need their extension: `20` is a size even if a file or folder called `20` exists, while `20.mp4` is a file. Folder names and names without an extension are rejected.
 
 ### Examples
 
