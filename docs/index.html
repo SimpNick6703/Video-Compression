@@ -1202,8 +1202,8 @@ format=gbrpf32le</pre>
                 </ol>
 
                 <p class="df-callout mt-4">
-                    <strong>HLG in v1.3.0-rc4:</strong>
-                    keeping HLG as HEVC works. Converting HLG to SDR currently shifts saturated colors, most visibly blues and oranges. HDR10 colors are not affected. HDR files of either kind that lack primaries or matrix tags cannot be converted to SDR yet.
+                    <strong>Two adjustments to step 1:</strong>
+                    HLG adds <span class="df-code">agamma=0</span>, because zscale's faster default applies HLG's system gamma to each channel separately and shifts saturated colors. The exact math makes HLG conversion 1.4&ndash;1.5 times slower at 4K60, and HDR10 does not need it. When a file has no primaries or matrix tags, BT.2020 is assumed, as both HDR formats specify.
                 </p>
 
                 <details class="df-details df-card mt-4">
@@ -1386,7 +1386,7 @@ format=gbrpf32le</pre>
 
                 <p class="df-callout mt-4">
                     <strong>Takeaway:</strong>
-                    Keeping HDR costs almost no CPU. Converting it is 2&ndash;4 times slower and uses most of the CPU, so choose HEVC for HDR videos unless the viewer needs H.264. Audio is copied unless it is lossless or takes over 10% of a small target (and is above 160 kbps). Then it becomes 128 kbps AAC and the video gets the saved bits, for about 4 extra seconds on a 3-minute clip.
+                    Keeping HDR costs almost no CPU. Converting HDR10 is 2&ndash;4 times slower (HLG more) and uses most of the CPU, so choose HEVC for HDR videos unless the viewer needs H.264. Audio is copied unless it is lossless or takes over 10% of a small target (and is above 160 kbps). Then it becomes 128 kbps AAC and the video gets the saved bits, for about 4 extra seconds on a 3-minute clip.
                 </p>
                 <p class="df-sub mt-3">
                     Further reading:
