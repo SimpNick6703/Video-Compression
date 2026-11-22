@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let candidates = [];
         validHeights.forEach(h => {
-            const w = Math.round(h * aspectRatio);
+            const w = Math.floor(h * aspectRatio); // int() in the app
             validFps.forEach(f => {
                 const pixelsPerSec = w * h * f;
                 const bpp = targetBits / (duration * pixelsPerSec);
@@ -157,17 +157,17 @@ document.addEventListener('DOMContentLoaded', () => {
         win: {
             title: "Windows Execution Priority", icon: "fa-windows", color: "text-blue-400",
             chain: [
-                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Supports parallel split single-pass.", icon: "fa-microchip" },
+                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Needs driver 610.0 or newer, which GTX 900 and 10 series cards cannot install.", icon: "fa-microchip" },
                 { name: "AMD AMF", desc: "H.265/H.264 via AMD's Media Framework.", icon: "fa-microchip" },
                 { name: "Intel Quick Sync (QSV)", desc: "H.265/H.264 via Intel's integrated GPU.", icon: "fa-microchip" },
                 { name: "CPU Fallback (libx265/libx264)", desc: "Software encoding. Most compatible, but slowest.", icon: "fa-server" }
             ],
-            note: "The script probes for encoders for the selected codec (H.265/HEVC or H.264). If dedicated GPU encoding fails or is unavailable, it defaults to CPU."
+            note: "The script probes for encoders for the selected codec (H.265/HEVC or H.264). An encoder that fails the probe, such as NVENC on a driver older than 610.0, is skipped for the next one, down to the CPU."
         },
         lin: {
             title: "Linux Execution Priority", icon: "fa-linux", color: "text-yellow-400",
             chain: [
-                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Supports parallel split single-pass.", icon: "fa-microchip" },
+                { name: "Nvidia NVENC", desc: "H.265/H.264 via dedicated hardware. Needs driver 610.0 or newer, which GTX 900 and 10 series cards cannot install.", icon: "fa-microchip" },
                 { name: "VA-API", desc: "Unified API for AMD and Intel hardware acceleration.", icon: "fa-layer-group" },
                 { name: "CPU Fallback (libx265/libx264)", desc: "Software encoding. Most compatible, but slowest.", icon: "fa-server" }
             ],
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
             d.chain.forEach((e, i) => {
                 const el = document.createElement('div');
                 el.className = `flex items-center p-4 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-slate-500 transition-all ${i===0?'ring-1 ring-cyan-500/30':''}`;
-                el.innerHTML = `<div class="w-8 h-8 rounded-full ${i===0?'bg-cyan-500 text-slate-900':'bg-slate-700 text-white'} flex items-center justify-center font-bold text-sm mr-4">${i+1}</div><div class="flex-grow"><div class="font-bold text-white font-mono text-sm">${e.name}</div><div class="text-xs text-slate-400">${e.desc}</div></div><i class="fa-solid ${e.icon} text-slate-600 text-xl ml-4"></i>`;
+                el.innerHTML = `<div class="w-8 h-8 shrink-0 rounded-full ${i===0?'bg-cyan-500 text-slate-900':'bg-slate-700 text-white'} flex items-center justify-center font-bold text-sm mr-4">${i+1}</div><div class="flex-grow"><div class="font-bold text-white font-mono text-sm">${e.name}</div><div class="text-xs text-slate-400">${e.desc}</div></div><i class="fa-solid ${e.icon} text-slate-600 text-xl ml-4"></i>`;
                 priorityChain.appendChild(el);
             });
         }
@@ -234,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
             scaleStatus: "Bypassed (Native)",
             h2dVol: "~457 MB (Stream)",
             d2hVol: "~88.5 MB (Muxed)",
-            busStatus: "Minimal (~2 MB/s)",
+            busStatus: "Minimal (bitstream only)",
             busStatusClass: "text-emerald-400",
             nodes: { storage: true, host: true, pcie: true, gpu: true }
         },
@@ -250,13 +250,13 @@ document.addEventListener('DOMContentLoaded', () => {
             pixfmtSub: "Software Host Buffer",
             scale: "CPU Software",
             scaleSub: "Lanczos Filter (libswscale)",
-            cpu: "~30% - 40%",
+            cpu: "~52%",
             cpuSub: "CPU Scaling Workload",
             scaleLabel: "CPU Lanczos Scale",
             scaleStatus: "Active (720p)",
             h2dVol: "~19.65 GB (720p)",
             d2hVol: "~44.22 GB (1080p)",
-            busStatus: "Heavy (~1.6 GB/s)",
+            busStatus: "Heavy (~2.7 GB/s)",
             busStatusClass: "text-amber-400",
             nodes: { storage: true, host: true, pcie: true, gpu: true }
         },
@@ -287,20 +287,20 @@ document.addEventListener('DOMContentLoaded', () => {
             badge: "Current Implementation",
             badgeClass: "bg-emerald-900/40 text-emerald-400 border-emerald-500/40",
             note: "Active current pipeline: decoded, scaled, and encoded entirely inside GPU VRAM without host RAM roundtrips.",
-            summary: "The active current hardware pipeline, shown here for NVIDIA with -hwaccel cuda -hwaccel_output_format cuda and scale_cuda=-2:H:interp_algo=lanczos. Other backends follow the same shape with their native scaler (scale_vaapi, vpp_amf, vpp_qsv, scale_vt) and fall back automatically to an upload tier or the legacy path when an input cannot be decoded in hardware. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
+            summary: "The active current hardware pipeline, shown here for NVIDIA with -hwaccel cuda -hwaccel_output_format cuda and scale_cuda=-2:H:interp_algo=lanczos. Other backends follow the same shape with their native scaler (scale_vaapi, vpp_amf, vpp_qsv, scale_vt) and fall back automatically (except HDR to SDR) to an upload tier or the legacy path when an input cannot be decoded in hardware. Frames remain in GPU memory (pix_fmt: cuda) throughout the entire lifetime. Decoded by NVDEC, resized by CUDA cores directly in VRAM, and encoded by NVENC. Completely eliminates the 64 GB PCIe roundtrip.",
             pcie: "~545 MB Total",
             pcieSub: "True Zero-Copy Pipeline",
             pixfmt: "pix_fmt: cuda",
             pixfmtSub: "On-Chip VRAM Resident",
             scale: "GPU CUDA Cores",
             scaleSub: "Hardware scale_cuda",
-            cpu: "< 3% Load",
-            cpuSub: "Near-Zero CPU Footprint",
+            cpu: "~7% Load",
+            cpuSub: "Demux, Mux and Telemetry",
             scaleLabel: "CUDA Core Resizer",
             scaleStatus: "Active (in VRAM)",
             h2dVol: "~457 MB (Stream)",
             d2hVol: "~88.5 MB (Muxed)",
-            busStatus: "Minimal (~2 MB/s)",
+            busStatus: "Minimal (bitstream only)",
             busStatusClass: "text-emerald-400",
             nodes: { storage: true, host: true, pcie: true, gpu: true }
         }
