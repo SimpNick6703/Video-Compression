@@ -367,10 +367,14 @@ class HdrSource(NamedTuple):
     Attributes:
         transfer: `smpte2084` (PQ, HDR10) or `arib-std-b67` (HLG).
         ten_bit: True when the source has more than 8 bits per sample.
+        has_primaries: False when the colour primaries are untagged.
+        has_matrix: False when the YCbCr matrix is untagged.
     """
 
     transfer: str
     ten_bit: bool
+    has_primaries: bool = True
+    has_matrix: bool = True
 
 
 # HDR (PQ or HLG) to SDR BT.709, run on the CPU after scaling so it touches fewer pixels.
@@ -391,6 +395,25 @@ _TONEMAP_DECODE: Dict[str, Tuple[str, ...]] = {
     "qsv": ("-hwaccel", "d3d11va"),
     "videotoolbox": ("-hwaccel", "videotoolbox"),
 }
+
+
+def _tonemap_filters(hdr: HdrSource) -> Tuple[str, ...]:
+    """Return the tone-mapping chain adjusted to the source's transfer and tags.
+
+    Example:
+        >>> _tonemap_filters(HdrSource("arib-std-b67", True))[0]
+        'zscale=t=linear:npl=100:agamma=0'
+    """
+    linearize, *rest = TONEMAP_FILTERS
+    if hdr.transfer == "arib-std-b67":
+        # The default agamma=1 applies HLG's system gamma per channel. Not for PQ: no gain, 2.5x slower.
+        linearize += ":agamma=0"
+    # zscale refuses untagged sources; HDR10 and HLG are BT.2020.
+    if not hdr.has_primaries:
+        linearize += ":pin=bt2020:p=bt2020"
+    if not hdr.has_matrix:
+        linearize += ":min=bt2020nc"
+    return (linearize, *rest)
 
 
 def hdr_handling(backend: Optional[HwBackend], codec_type: str, hdr: Optional[HdrSource]) -> str:
@@ -420,9 +443,9 @@ def _keep_hdr_output(hdr: HdrSource) -> Tuple[str, ...]:
 
 def _tonemap_args(
     backend: Optional[HwBackend], node: Optional[str], src_h: int, tgt_h: int,
-    src_fps: float, tgt_fps: float,
+    src_fps: float, tgt_fps: float, hdr: HdrSource,
 ) -> VideoArgs:
-    filters = _cpu_filters(src_h, tgt_h, src_fps, tgt_fps, "hevc") + TONEMAP_FILTERS
+    filters = _cpu_filters(src_h, tgt_h, src_fps, tgt_fps, "hevc") + _tonemap_filters(hdr)
     sdr_tags = ("-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
     if backend is None:
         return VideoArgs(filters=filters + ("format=yuv420p",), post_input=sdr_tags)
@@ -469,7 +492,7 @@ def build_video_args(
     """
     handling = hdr_handling(backend, codec_type, hdr)
     if handling == "tonemap":
-        return _tonemap_args(backend, vaapi_node, src_h, tgt_h, src_fps, tgt_fps)
+        return _tonemap_args(backend, vaapi_node, src_h, tgt_h, src_fps, tgt_fps, hdr)
     ten_bit = handling == "keep" and hdr is not None and hdr.ten_bit
 
     if backend is None or tier is Tier.LEGACY:

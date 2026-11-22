@@ -38,6 +38,7 @@ VAAPI_NODE_TIMEOUT_S = 10
 PIPELINE_PROBE_TIMEOUT_S = 20
 PIPELINE_PROBE_TIERS = (Tier.ZERO_COPY, Tier.UPLOAD)
 HDR_TRANSFERS = ("smpte2084", "arib-std-b67")
+UNTAGGED_COLOR = ("", "unknown", "reserved")
 
 ENCODER_PRIORITY = {
     "hevc": {
@@ -858,7 +859,7 @@ def get_hdr_source(input_path: str) -> Optional[HdrSource]:
     """
     cmd = [
         get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=color_transfer,pix_fmt", "-of", "json", input_path,
+        "-show_entries", "stream=color_transfer,pix_fmt,color_primaries,color_space", "-of", "json", input_path,
     ]
     try:
         out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env())
@@ -869,7 +870,12 @@ def get_hdr_source(input_path: str) -> Optional[HdrSource]:
     transfer = stream.get("color_transfer", "")
     if transfer not in HDR_TRANSFERS:
         return None
-    return HdrSource(transfer, is_high_bit_depth(stream.get("pix_fmt", "")))
+    return HdrSource(
+        transfer,
+        is_high_bit_depth(stream.get("pix_fmt", "")),
+        has_primaries=stream.get("color_primaries", "") not in UNTAGGED_COLOR,
+        has_matrix=stream.get("color_space", "") not in UNTAGGED_COLOR,
+    )
 
 
 def is_high_bit_depth(pix_fmt: str) -> bool:
