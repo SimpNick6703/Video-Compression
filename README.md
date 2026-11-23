@@ -41,7 +41,7 @@ Under the hood, the engine calculates optimal Bits-Per-Pixel (BPP) rate control,
 ## Requirements
 For running the script locally (your own build):
 - Python 3.11+
-- ffmpeg installed and added to PATH (Optional)
+- FFmpeg on PATH (with `zscale` and `tonemap` for HDR videos), or run `python build.py` once to download the minimal build (see [Development](#development))
 - CUDA capable GPU for faster encoding (Optional)
 - HEVC or H.264 encoding capable GPU (Optional)
 
@@ -103,7 +103,7 @@ python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--
 | `--custom` | `flag` | No | `False` | Asks for the target size in MB at startup (used by the *Custom...* right-click entry). |
 | `--verbose`, `-v` | `flag` | No | `False` | Prints the decision trail live: encoder probes, pipeline tier, split point, bitrates and every FFmpeg command. Setting the environment variable `DEBUG=1` does the same. |
 
-Exit codes: `0` success, `1` failure (including "already smaller than target"), `130` cancelled with Ctrl+C (the partial output is removed). The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
+Exit codes: `0` success, `1` failure (including "already smaller than target" and an argument that is not a size, codec or file name), `130` cancelled with Ctrl+C (the partial output is removed). The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
 
 > [!TIP]
 > **Invocation and argument order are flexible:**
@@ -249,6 +249,8 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 - **Dolby Vision:** profile 5 is not recognised as HDR and comes out with wrong colours. Profile 8.4 is handled as HLG. Dolby Vision metadata is not kept.
 - **Only the first audio track is kept**, and subtitles are not copied.
 - **Very short clips with a single keyframe** can fail to encode.
+- **Drop one video at a time:** with two, the second is taken as the output file and overwritten.
+- **Very wide videos can fail on a GPU encoder** when the target size does not downscale them, for example above 4,096 pixels wide for H.264 on NVENC. The app does not fall back to the CPU encoder.
 
 ## Roadmap
 
@@ -263,7 +265,7 @@ Video-Compression runs entirely offline: it reads the input video and writes the
 
 ## License
 
-This project and its prebuilt standalone executables (which bundle static `ffmpeg` and `ffprobe` binaries from [SimpNick6703/ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)) are distributed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
+This project and its prebuilt standalone executables (which bundle `ffmpeg` and `ffprobe` binaries from [SimpNick6703/ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)) are distributed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
 
 See the [LICENSE](LICENSE) file for the full license text. Each release also includes a `THIRD_PARTY_NOTICES-<platform>.txt` file with this license and the licenses of everything bundled in the executables (FFmpeg, x264, x265, zimg, dav1d, Python, PyInstaller and the Python packages used). The notices also list the exact source revisions of the bundled FFmpeg build, whose source is available from the linked upstream repositories and [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds).
 
