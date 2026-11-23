@@ -95,3 +95,12 @@ def test_check_audio_encoder_available_parses_listing(
 ) -> None:
     monkeypatch.setattr(core.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=listing))
     assert core.check_audio_encoder_available("aac") is expected
+
+
+def test_concat_list_escapes_single_quotes() -> None:
+    # A Windows user named O'Brien has a temp folder with a quote in it.
+    listing = core.build_concat_list(r"C:\Users\O'Brien\Temp\p1.mp4", "/tmp/it's/p2.mp4", 1.5)
+    assert listing == (
+        "file 'C:\\Users\\O'\\''Brien\\Temp\\p1.mp4'\nduration 1.500000\n"
+        "file '/tmp/it'\\''s/p2.mp4'\n"
+    )

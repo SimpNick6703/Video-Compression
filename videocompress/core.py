@@ -689,7 +689,11 @@ def build_concat_list(first_path: str, second_path: str, split_time: float) -> s
         >>> build_concat_list("a.mp4", "b.mp4", 1.5)
         "file 'a.mp4'\\nduration 1.500000\\nfile 'b.mp4'\\n"
     """
-    return f"file '{first_path}'\nduration {split_time:.6f}\nfile '{second_path}'\n"
+    def quoted(path: str) -> str:
+        # Inside quotes, the concat demuxer only needs ' itself escaped: close, \', reopen.
+        return "'" + path.replace("'", "'\\''") + "'"
+
+    return f"file {quoted(first_path)}\nduration {split_time:.6f}\nfile {quoted(second_path)}\n"
 
 
 def build_concat_cmd(
