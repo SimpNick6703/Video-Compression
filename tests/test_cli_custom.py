@@ -52,3 +52,17 @@ def test_custom_without_answer_exits(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     with pytest.raises(SystemExit) as exc:
         run_cli(monkeypatch, [str(source), "--custom"], [])
     assert exc.value.code == 1
+
+
+def test_ctrl_c_at_the_prompt_exits_130(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"x")
+
+    def interrupted(prompt: str = "") -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", interrupted)
+    monkeypatch.setattr(sys, "argv", ["videocompress", str(source), "--custom"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 130

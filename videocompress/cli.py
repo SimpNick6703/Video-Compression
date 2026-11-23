@@ -145,10 +145,10 @@ def main() -> None:
         sys.exit(1)
 
     inp_path = str(input_file)
-    if custom_size:
-        target_mb = _prompt_target_mb()
 
     try:
+        if custom_size:
+            target_mb = _prompt_target_mb()
         success, result = compress_video(
             input_path=inp_path,
             output_path=output_file,
