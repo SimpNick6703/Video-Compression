@@ -41,6 +41,9 @@ Releases = "https://github.com/SimpNick6703/Video-Compression/releases"
 build = ["pyinstaller>=6.0"]
 dev = ["pytest>=8.0", "psutil>=5.9", "ruff>=0.17,<0.18"]
 
+[tool.setuptools.packages.find]
+include = ["videocompress*"]
+
 [tool.setuptools_scm]
 fallback_version = "1.2.0"
 

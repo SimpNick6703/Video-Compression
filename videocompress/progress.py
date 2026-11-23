@@ -16,6 +16,7 @@ import subprocess
 from collections import deque
 from typing import List, Tuple, Optional
 
+from rich import box
 from rich.console import Console, RenderableType
 from rich.live import Live
 from rich.table import Table
@@ -28,7 +29,8 @@ from videocompress.core import get_display_name
 
 log = logging.getLogger(__name__)
 
-console = Console(safe_box=True)
+# safe_box would turn rounded corners square in the console the right-click menu opens.
+console = Console(safe_box=False)
 
 PROGRESS_KEYS = frozenset({"frame", "fps", "bitrate", "total_size", "out_time_us", "out_time", "speed", "progress"})
 
@@ -317,6 +319,7 @@ def build_dual_display(
     bar_w = get_bar_width()
 
     table = Table(
+        box=box.ROUNDED,
         show_header=True,
         header_style="bold dim",
         border_style="dim",
@@ -382,6 +385,7 @@ def build_single_display(
     bar_w = get_bar_width()
 
     table = Table(
+        box=box.ROUNDED,
         show_header=True,
         header_style="bold dim",
         border_style="dim",
@@ -422,6 +426,7 @@ def show_encoder_detection(results: List[Tuple[str, str]]) -> None:
     console.print()
 
     table = Table(
+        box=box.ROUNDED,
         border_style="dim",
         show_header=True,
         header_style="bold dim",

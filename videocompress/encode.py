@@ -14,8 +14,9 @@ import shlex
 import tempfile
 import subprocess
 import logging
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Tuple, Optional
+from typing import Callable, Iterator, Tuple, Optional
 
 from rich.rule import Rule
 
@@ -25,19 +26,23 @@ from videocompress.core import (
     get_clean_env,
     get_file_size,
     clean_log_file,
+    get_hdr_source,
     get_video_info,
+    find_missing_runtime_library,
     get_smart_split_point,
     get_optimal_settings,
     select_best_encoder,
     build_single_pass_cmd,
     build_concat_cmd,
+    build_concat_list,
     check_bsf_available,
+    plan_audio,
     probe_pipeline_tier,
     resolve_vaapi_node,
     calculate_video_bitrate,
     calculate_split_bitrates,
 )
-from videocompress.hwpipeline import Tier
+from videocompress.hwpipeline import HdrSource, Tier, backend_for_encoder, hdr_handling
 from videocompress.progress import (
     console,
     show_encoder_detection,
@@ -48,6 +53,42 @@ from videocompress.progress import (
 )
 
 log = logging.getLogger(__name__)
+
+
+@contextmanager
+def _discard_output_on_cancel(output_path: str) -> Iterator[None]:
+    """Delete the output if Ctrl+C interrupts the block after FFmpeg started writing it.
+
+    A file that was already at the path and is still untouched is kept.
+
+    Args:
+        output_path: File written inside the block.
+
+    Yields:
+        Nothing.
+
+    Example:
+        >>> with _discard_output_on_cancel("out.mp4"):
+        ...     pass
+    """
+    def state() -> Optional[Tuple[int, int]]:
+        try:
+            info = os.stat(output_path)
+        except OSError:
+            return None
+        return info.st_size, info.st_mtime_ns
+
+    before = state()
+    try:
+        yield
+    except KeyboardInterrupt:
+        after = state()
+        if after and after != before:
+            try:
+                os.remove(output_path)
+            except OSError as e:
+                log.warning("Could not remove the partial output %s: %s", output_path, e)
+        raise
 
 
 def _encode_hw_split(
@@ -66,6 +107,8 @@ def _encode_hw_split(
     opt_fps: float,
     tier: Tier = Tier.LEGACY,
     vaapi_node: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
+    reencode_audio: bool = False,
 ) -> Tuple[bool, str]:
     """Execute parallel split single-pass encoding for hardware encoders.
 
@@ -78,13 +121,15 @@ def _encode_hw_split(
         target_size_mb: Total target size in megabytes.
         split_time: Timestamp in seconds marking the segment boundary.
         durs: Tuple of (first_segment_duration, second_segment_duration) in seconds.
-        audio_kbps: Probed audio bitrate in kbps.
+        audio_kbps: Audio bitrate of the output in kbps.
+        reencode_audio: Re-encode the audio instead of copying it.
         fps: Source frames per second.
         src_h: Source height in pixels.
         opt_h: Target height for scaling.
         opt_fps: Target frames per second.
         tier: Hardware pipeline tier used for both segment commands.
         vaapi_node: Optional VA-API render node.
+        hdr: HDR properties of the source, else None.
 
     Returns:
         Tuple of (success flag, error message).
@@ -112,9 +157,10 @@ def _encode_hw_split(
                 output_path=p1_path,
                 tgt_h=opt_h,
                 tgt_fps=opt_fps,
-                audio_kbps=audio_kbps,
+                audio_kbps=0,  # audio is added from the source when stitching
                 tier=tier,
                 vaapi_node=vaapi_node,
+                hdr=hdr,
             )
             cmd_b = build_single_pass_cmd(
                 ffmpeg_exe=ffmpeg_exe,
@@ -129,9 +175,10 @@ def _encode_hw_split(
                 output_path=p2_path,
                 tgt_h=opt_h,
                 tgt_fps=opt_fps,
-                audio_kbps=audio_kbps,
+                audio_kbps=0,  # audio is added from the source when stitching
                 tier=tier,
                 vaapi_node=vaapi_node,
+                hdr=hdr,
             )
 
             log.debug("Segment bitrates: %s kbps (split at %.3f s)", brs, split_time)
@@ -153,10 +200,13 @@ def _encode_hw_split(
 
             with console.status("[bold cyan]  Stitching segments...", spinner="dots"):
                 with open(list_path, "w", encoding="utf-8") as lf:
-                    lf.write(f"file '{p1_path}'\nfile '{p2_path}'")
+                    lf.write(build_concat_list(p1_path, p2_path, split_time))
                 concat_cmd = build_concat_cmd(
                     ffmpeg_exe, list_path, output_path,
                     annexb_available=check_bsf_available("h264_mp4toannexb"),
+                    source_path=input_path,
+                    audio_kbps=audio_kbps,
+                    reencode_audio=reencode_audio,
                 )
                 log.debug("Stitch command: %s", shlex.join(concat_cmd))
                 subprocess.run(
@@ -229,6 +279,8 @@ def _encode_cpu_single(
     src_h: int,
     opt_h: int,
     opt_fps: float,
+    hdr: Optional[HdrSource] = None,
+    reencode_audio: bool = False,
 ) -> Tuple[bool, str]:
     """Execute serial single-pass encoding for CPU software fallback (libx265, libx264).
 
@@ -240,11 +292,13 @@ def _encode_cpu_single(
         codec_type: "hevc" or "h264".
         target_size_mb: Target size in megabytes.
         duration: Total duration in seconds.
-        audio_kbps: Probed audio bitrate in kbps.
+        audio_kbps: Audio bitrate of the output in kbps.
+        reencode_audio: Re-encode the audio instead of copying it.
         fps: Input frames per second.
         src_h: Source height in pixels.
         opt_h: Target height for scaling.
         opt_fps: Target frames per second.
+        hdr: HDR properties of the source (tone-mapped to SDR), else None.
 
     Returns:
         Tuple of (success flag, error message).
@@ -273,6 +327,8 @@ def _encode_cpu_single(
             tgt_h=opt_h,
             tgt_fps=opt_fps,
             audio_kbps=audio_kbps,
+            reencode_audio=reencode_audio,
+            hdr=hdr,
         )
         log.debug("Bitrate: %s kbps", bitrate_k)
         log.debug("Encode command: %s", shlex.join(cmd))
@@ -291,7 +347,7 @@ def _encode_cpu_single(
         return (True, "") if success else (False, "CPU Encode Failed")
     except KeyboardInterrupt:
         console.print("\n[bold red]Cancelling...[/]")
-        return False, "Cancelled by user"
+        raise
     except Exception as e:
         log.exception("CPU single-pass encode error")
         return False, f"CPU encode error: {e}"
@@ -331,13 +387,24 @@ def compress_video(
     if not os.path.exists(input_path):
         return False, f"Input not found: {input_path}"
 
+    missing_library = find_missing_runtime_library(get_resource_path("ffprobe"))
+    if missing_library:
+        return False, missing_library
+
     info = get_video_info(input_path)
     if not info:
         return False, f"Failed to extract video info from: {input_path}"
-    duration, orig_bytes, fps, audio_kbps, src_w, src_h = info
-
+    duration, orig_bytes, fps, source_audio_kbps, src_w, src_h, audio_codec = info
     if (orig_bytes / MB_TO_BYTES) <= target_size_mb:
         return False, f"Already smaller than target: {orig_bytes / MB_TO_BYTES:.2f} MB <= {target_size_mb} MB"
+
+    audio_kbps, reencode_audio = plan_audio(audio_codec, source_audio_kbps, target_size_mb, duration)
+    log.debug(
+        "Audio: %s %d kbps -> %s at %d kbps",
+        audio_codec or "none", source_audio_kbps, "AAC stereo" if reencode_audio else "copy", audio_kbps,
+    )
+    hdr = get_hdr_source(input_path)
+    log.debug("HDR source: %s", hdr or "none (SDR)")
 
     if output_path is None:
         input_p = Path(input_path)
@@ -363,60 +430,71 @@ def compress_video(
     show_encoder_detection(detection_results)
 
     split_info: Optional[str] = None
+    hdr_info = ""
+    if hdr:
+        keep = hdr_handling(backend_for_encoder(active_encoder), codec_type, hdr) == "keep"
+        depth = "10-bit" if hdr.ten_bit else "8-bit"
+        hdr_info = f" \u00b7 HDR kept ({depth})" if keep else " \u00b7 HDR tone-mapped to SDR"
 
     # Branch 1: Hardware Encoders (Parallel Split Single-Pass)
     if active_encoder not in ("libx265", "libx264"):
         vaapi_node = resolve_vaapi_node(active_encoder) if "vaapi" in active_encoder else None
         tier = probe_pipeline_tier(
             ffmpeg_exe, input_path, active_encoder, codec_type,
-            src_h, opt_h, fps, opt_fps, vaapi_node,
+            src_h, opt_h, fps, opt_fps, vaapi_node, hdr,
         )
         split_time = get_smart_split_point(input_path, duration)
         durs_tuple = (split_time, duration - split_time)
         split_info = f"{durs_tuple[0]:.1f}s + {durs_tuple[1]:.1f}s"
 
-        ok, err, tier = _encode_hw_with_fallback(
-            lambda t: _encode_hw_split(
-                ffmpeg_exe=ffmpeg_exe,
-                input_path=input_path,
-                output_path=output_path,
-                active_encoder=active_encoder,
-                codec_type=codec_type,
-                target_size_mb=target_size_mb,
-                split_time=split_time,
-                durs=durs_tuple,
-                audio_kbps=audio_kbps,
-                fps=fps,
-                src_h=src_h,
-                opt_h=opt_h,
-                opt_fps=opt_fps,
-                tier=t,
-                vaapi_node=vaapi_node,
-            ),
-            tier,
-        )
-        mode_str = f"parallel split \u00b7 {tier.label}"
+        with _discard_output_on_cancel(output_path):
+            ok, err, tier = _encode_hw_with_fallback(
+                lambda t: _encode_hw_split(
+                    ffmpeg_exe=ffmpeg_exe,
+                    input_path=input_path,
+                    output_path=output_path,
+                    active_encoder=active_encoder,
+                    codec_type=codec_type,
+                    target_size_mb=target_size_mb,
+                    split_time=split_time,
+                    durs=durs_tuple,
+                    audio_kbps=audio_kbps,
+                    reencode_audio=reencode_audio,
+                    fps=fps,
+                    src_h=src_h,
+                    opt_h=opt_h,
+                    opt_fps=opt_fps,
+                    tier=t,
+                    vaapi_node=vaapi_node,
+                    hdr=hdr,
+                ),
+                tier,
+            )
+        mode_str = f"parallel split \u00b7 {tier.label}{hdr_info}"
         if not ok:
             clean_log_file()
             return False, err
 
     # Branch 2: CPU Fallback (Serial Single-Pass)
     else:
-        mode_str = "CPU single-pass"
-        ok, err = _encode_cpu_single(
-            ffmpeg_exe=ffmpeg_exe,
-            input_path=input_path,
-            output_path=output_path,
-            active_encoder=active_encoder,
-            codec_type=codec_type,
-            target_size_mb=target_size_mb,
-            duration=duration,
-            audio_kbps=audio_kbps,
-            fps=fps,
-            src_h=src_h,
-            opt_h=opt_h,
-            opt_fps=opt_fps,
-        )
+        mode_str = f"CPU single-pass{hdr_info}"
+        with _discard_output_on_cancel(output_path):
+            ok, err = _encode_cpu_single(
+                ffmpeg_exe=ffmpeg_exe,
+                input_path=input_path,
+                output_path=output_path,
+                active_encoder=active_encoder,
+                codec_type=codec_type,
+                target_size_mb=target_size_mb,
+                duration=duration,
+                audio_kbps=audio_kbps,
+                reencode_audio=reencode_audio,
+                fps=fps,
+                src_h=src_h,
+                opt_h=opt_h,
+                opt_fps=opt_fps,
+                hdr=hdr,
+            )
         if not ok:
             clean_log_file()
             return False, err

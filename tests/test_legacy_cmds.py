@@ -33,7 +33,7 @@ CASES: Dict[str, Dict[str, object]] = {
         ],
     ),
     "hevc_vaapi scaled, fps drop, trimmed, audio re-encode": dict(
-        args=dict(encoder="hevc_vaapi", codec_type="hevc", tgt_h=720, tgt_fps=30.0, start=10.0, end=20.0, audio_kbps=192),
+        args=dict(encoder="hevc_vaapi", codec_type="hevc", tgt_h=720, tgt_fps=30.0, start=10.0, end=20.0, audio_kbps=128, reencode_audio=True),
         expected=[
             "ffmpeg", "-y", "-init_hw_device", "vaapi=va", "-filter_hw_device", "va",
             "-ss", "10.0", "-to", "20.0", "-i", "in.mp4", "-avoid_negative_ts", "make_zero",
@@ -68,12 +68,6 @@ def build(args: Dict[str, object], tier: Optional[Tier] = None) -> List[str]:
         ffmpeg_exe="ffmpeg", input_path="in.mp4", bitrate_k=2000, src_fps=60.0, src_h=1080,
         output_path="out.mp4", **args, **extra,  # type: ignore[arg-type]
     )
-
-
-@pytest.fixture(autouse=True)
-def stub_audio_probe(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make the AAC availability check deterministic."""
-    monkeypatch.setattr(core, "check_audio_encoder_available", lambda encoder_name="aac": True)
 
 
 @pytest.mark.parametrize("name", list(CASES))

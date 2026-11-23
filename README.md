@@ -41,37 +41,45 @@ Under the hood, the engine calculates optimal Bits-Per-Pixel (BPP) rate control,
 ## Requirements
 For running the script locally (your own build):
 - Python 3.11+
-- ffmpeg installed and added to PATH (Optional)
+- FFmpeg on PATH (with `zscale` and `tonemap` for HDR videos), or run `python build.py` once to download the minimal build (see [Development](#development))
 - CUDA capable GPU for faster encoding (Optional)
 - HEVC or H.264 encoding capable GPU (Optional)
 
 For using prebuilt binaries from releases, you just need to download the executable for your platform; no installation required (standalone executables bundle lightweight FFmpeg/FFprobe binaries from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)). To make full use of GPU acceleration, you need a compatible NVIDIA/AMD/Intel GPU that supports hardware-accelerated video encoding.
 
 > [!IMPORTANT]
-> On Linux, the bundled FFmpeg requires the VA-API runtime libraries `libva2`, `libva-drm2` and `libdrm2`. They are generally already present on desktop distributions, but minimal installs and containers may need them installed (e.g. `sudo apt install libva2 libva-drm2 libdrm2`).
+> On Linux, the prebuilt executables need glibc 2.38 or newer (for example Ubuntu 24.04 or Debian 13; they do not start on Ubuntu 22.04 or Debian 12). The bundled FFmpeg also requires the VA-API runtime libraries `libva2`, `libva-drm2` and `libdrm2`. They are generally already present on desktop distributions, but minimal installs and containers may need them installed (e.g. `sudo apt install libva2 libva-drm2 libdrm2`).
 
-> [!NOTE]
-> You may view if your Nvidia GPU supports NVENC [here](https://developer.nvidia.com/video-encode-decode-support-matrix) and keep your Nvidia GPU driver version 570.0 or higher.
+> [!IMPORTANT]
+> **NVIDIA GPUs need driver 610.0 or newer** for NVENC with the prebuilt executables (v1.1.4 and later). Run `nvidia-smi` to see your version, and check [whether your GPU supports NVENC](https://developer.nvidia.com/video-encode-decode-support-matrix). With an older driver, the app lists NVIDIA as *Unavailable* and uses the next encoder, down to the CPU. GTX 900 and 10 series cards cannot install 610 (see [Known Issues](#known-issues)).
 
 ## How to use
 - In Windows:
   - Download any of the target filesize builds from [releases](https://github.com/SimpNick6703/Video-Compression/releases).
-  - Drag and drop your video directly onto the executable (e.g., `100mb-hevc-win64.exe`). (Or run from terminal as `./{size}mb-{codec}-win64.exe <input.mp4> [output.mp4]`).
+  - Drag and drop your video directly onto the executable (e.g., `100mb-hevc-win64-v1.3.0.exe`). (Or run from terminal as `./{size}mb-{codec}-win64-{version}.exe <input.mp4> [output.mp4]`).
+  - Or install `VideoCompression-Setup-win64-<version>.exe` from [releases](https://github.com/SimpNick6703/Video-Compression/releases) to add a **Video-Compression** submenu (*Compress to 20 MB / 50 MB / 100 MB / 1 GB / Custom...*) to the right-click menu of `.mp4`, `.mkv`, `.mov`, `.avi`, `.webm`, `.m4v`, `.flv` and `.3gp` files. On Windows 11 it is under **Show more options**. The installer asks for the codec (HEVC or H.264); reinstall to change it. Updates keep the earlier choice, and a first silent install uses HEVC unless `/CODEC=h264` is passed. It installs for the current user only (no admin prompt), and uninstalling removes the menu.
 
 - In Linux:
   - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>).
-  - Make your downloaded file executable: `chmod +x {size}mb-{codec}-linux`
-  - Run in terminal as `./{size}mb-{codec}-linux <input.mp4> [output.mp4] [target_size_in_mb]`
+  - Make your downloaded file executable: `chmod +x {size}mb-{codec}-linux-{version}`
+  - Run in terminal as `./{size}mb-{codec}-linux-{version} <input.mp4> [output.mp4] [target_size_in_mb]`
 
 - In MacOS:
-  - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>) (prebuilt releases target Apple Silicon `{size}mb-{codec}-macos-arm64`).
-  - Make your downloaded file executable: `chmod +x {size}mb-{codec}-macos-arm64`
-  - Run in terminal as `./{size}mb-{codec}-macos-arm64 <input.mp4> [output.mp4]`
+  - Download your desired build from [releases](<https://github.com/SimpNick6703/Video-Compression/releases>) (prebuilt releases target Apple Silicon `{size}mb-{codec}-macos-arm64-{version}`).
+  - Make your downloaded file executable: `chmod +x {size}mb-{codec}-macos-arm64-{version}`
+  - Run in terminal as `./{size}mb-{codec}-macos-arm64-{version} <input.mp4> [output.mp4]`
   - You may need to allow the application from **Settings > Privacy & Security** since MacOS blocks unsigned applications initially unless allowed.
   - *(For Intel Macs)*: Simply run `python build.py` on your machine; it will automatically detect `x86_64`, fetch the matching minimal FFmpeg binary from [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds), and build native `{size}mb-{codec}-macos-x86_64` executables for you.
 
 > [!NOTE]
-> `{codec}` can be either `hevc` or `h264` depending on the build you downloaded. HEVC offers better compression efficiency, while H.264 offers better compatibility with older devices.
+> `{version}` is the release tag, for example `v1.3.0`. `{codec}` can be either `hevc` or `h264` depending on the build you downloaded. HEVC offers better compression efficiency, while H.264 offers better compatibility with older devices.
+
+> [!NOTE]
+> **HDR videos (HDR10 and HLG):** with a GPU encoder, HEVC keeps the video in HDR at its original bit depth (10-bit stays 10-bit, 8-bit stays 8-bit). H.264, and HEVC on the CPU encoder, convert it to standard colours (SDR) so it looks right on every screen and player. That conversion runs on the CPU, so it is slower: an 8.5 s 4K60 HDR10 clip took 31 s instead of 8.5 s on an RTX 4060 laptop, and HLG takes up to 1.5 times as long as HDR10.
+>
+> **AV1 videos** can be compressed too (the output is still HEVC or H.264).
+>
+> **Audio** is copied untouched, unless it is lossless (PCM, FLAC) or is above 160 kbps and would take more than 10% of the target size. It is then re-encoded to 128 kbps stereo AAC and the saved bits go to the video. Audio the bundled FFmpeg cannot decode (for example ALAC) is always copied, which does not work for every format (see [Known Issues](#known-issues)).
 
 ## How to Run (Python CLI)
 
@@ -88,18 +96,20 @@ python -m videocompress <input.mp4> [output.mp4] [target_size_in_mb] [codec] [--
 
 | Parameter | Type | Required | Default | Description |
 |:---|:---|:---|:---|:---|
-| `<input.mp4>` | `string` (Path) | **Yes** | — | Path to the source video file. Must exist on disk. |
-| `[output.mp4]` | `string` (Path) | No | `<input>_<size>MB.mp4` | Destination path for the compressed video. |
+| `<input.mp4>` | `string` (Path) | **Yes** | — | Path to the source video file, including its extension. Must exist on disk. |
+| `[output.mp4]` | `string` (Path) | No | `<input>_<size>MB.mp4` | Destination file for the compressed video, including its extension. A folder is not accepted. |
 | `[target_size_in_mb]` | `number` | No | `100` | Target file size threshold in megabytes (e.g. `20`, `50`, `100`, `1024`). Maps directly to Discord tiers: `20` MB (Free/Server Lvl 1), `50` MB (Server Lvl 2/Nitro Basic), `100` MB (Server Lvl 3), and `1024` MB ($10 Nitro). |
 | `[codec]` | `string` | No | `hevc` | Encoding codec: `hevc` (H.265, higher efficiency) or `h264` (H.264, broader compatibility). |
+| `--custom` | `flag` | No | `False` | Asks for the target size in MB at startup (used by the *Custom...* right-click entry). |
 | `--verbose`, `-v` | `flag` | No | `False` | Prints the decision trail live: encoder probes, pipeline tier, split point, bitrates and every FFmpeg command. Setting the environment variable `DEBUG=1` does the same. |
 
-Exit codes: `0` success, `1` failure (including "already smaller than target"), `130` cancelled with Ctrl+C. The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
+Exit codes: `0` success, `1` failure (including "already smaller than target" and an argument that is not a size, codec or file name), `130` cancelled with Ctrl+C (the partial output is removed). The preset executables accept the same arguments; the size and codec in their name are defaults that later arguments override.
 
 > [!TIP]
 > **Invocation and argument order are flexible:**
 > * You can invoke the CLI either directly by package directory (`python videocompress ...`) or as a module (`python -m videocompress ...`).
-> * Optional arguments can be provided in any order (e.g. `python videocompress input.mp4 50 hevc` or `python videocompress input.mp4 hevc 50`). The CLI automatically detects arguments by type: numeric values as target MB size, `hevc`/`h264` as the codec, existing file paths as the input, and any additional path as the output destination.
+> * Optional arguments can be provided in any order (e.g. `python videocompress input.mp4 50 hevc` or `python videocompress input.mp4 hevc 50`). The CLI automatically detects arguments by type: numeric values as target MB size, `hevc`/`h264` as the codec, and names with a file extension as paths (the first that exists is the input, the other is the output).
+> * File names always need their extension: `20` is a size even if a file or folder called `20` exists, while `20.mp4` is a file. Folder names and names without an extension are rejected.
 
 ### Examples
 
@@ -136,14 +146,14 @@ pip install -e ".[dev,build]"      # dev: pytest, ruff, psutil; build: pyinstall
 | Extra | Installs | Needed for |
 |:---|:---|:---|
 | *(none)* | `rich` | Running the CLI from source |
-| `dev` | `pytest`, `ruff`, `psutil` | Tests, linting, `tools/bench_vitals.py` |
+| `dev` | `pytest`, `ruff`, `psutil` | Tests, linting |
 | `build` | `pyinstaller` | `python build.py` |
 
 FFmpeg is looked up in this order: the bundled copy (inside an executable), an `ffmpeg-minimal-builds/` or `minimal-builds/` folder, the repository root, then `PATH`. `python build.py` downloads the minimal build to the repository root.
 
 ### Tests and Linting
 
-The tests need no GPU and no FFmpeg; every FFmpeg call is replaced with a fake, and the suite runs in well under a second. Real hardware is covered by running the CLI or the benchmark tool below.
+The tests need no GPU and no FFmpeg; every FFmpeg call is replaced with a fake, and the suite runs in well under a second. Real hardware is covered by running the CLI.
 
 ```bash
 pytest -q                                   # whole suite
@@ -158,7 +168,15 @@ ruff check --fix .                          # apply the safe automatic fixes
 | `test_hwpipeline.py` | Exact FFmpeg arguments for every backend (NVENC, VA-API, AMF, QSV, VideoToolbox) and tier |
 | `test_legacy_cmds.py` | The legacy fallback still produces the pre-v1.2 commands |
 | `test_tier_fallback.py` | Tier probing order (zero-copy, then upload, then legacy) and the automatic retry |
-| `test_concat.py` | Segment stitching with and without `h264_mp4toannexb` |
+| `test_concat.py` | Segment stitching with and without `h264_mp4toannexb`, audio taken from the source |
+| `test_audio.py` | When audio is copied or re-encoded, and the video budget that leaves |
+| `test_hdr.py` | When HDR is kept or tone-mapped, and handling of missing colour tags |
+| `test_cli_custom.py` | The `--custom` target size prompt |
+| `test_runtime_libs.py` | The message for missing Linux system libraries |
+| `test_notices.py` | License notices shipped next to the executables |
+| `test_tables.py` | Rounded tables and panels, including in legacy Windows consoles |
+| `test_cancel.py` | Ctrl+C exits with 130 and removes the partial output |
+| `test_cli_args.py` | Sizes, codecs and file names on the command line, whatever is in the current folder |
 | `test_diagnostics.py` | In-memory run log and the failure-only error log file |
 | `test_version.py` | Version embedding in executables and FFmpeg release selection |
 
@@ -170,7 +188,7 @@ python build.py --verbose        # same, but keep build/ and *.spec for debuggin
 python build.py --clean-ffmpeg   # also delete the downloaded ffmpeg/ffprobe afterwards
 ```
 
-This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for the current platform. If `ffmpeg`/`ffprobe` are not already in the repository root, it downloads the newest [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) release: the highest FFmpeg version, then the highest revision (e.g. `ffmpeg-n9.0.2-r2`). It then checks that the binary contains the hardware filters this platform needs.
+This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for the current platform. If `ffmpeg`/`ffprobe` are not already in the repository root, it downloads the newest [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds) release: the highest FFmpeg version, then the highest revision (e.g. `ffmpeg-n9.0.2-r2`). It then checks that the binary contains the hardware filters this platform needs and the HDR tone-mapping filters (`zscale`, `tonemap`).
 
 | Environment variable | Effect |
 |:---|:---|
@@ -180,32 +198,13 @@ This builds every preset (20, 50, 100 and 1024 MB, each for HEVC and H.264) for 
 | `GITHUB_TOKEN` / `GH_TOKEN` | Used only to list FFmpeg releases; avoids the low anonymous GitHub API rate limit. |
 | `CI` | When set, a missing hardware filter fails the build instead of only warning. |
 
-### Benchmarking
-
-`tools/bench_vitals.py` runs any command and reports wall time, CPU time of the command and everything it starts, host CPU, peak memory and GPU engine load as one JSON line. It is a development tool and is not bundled into the executables.
-
-```bash
-python tools/bench_vitals.py --label 4k_v120 --output out.mp4 -- python -m videocompress input-4K60.mp4 out.mp4 100 hevc
-python tools/bench_vitals.py --label old --output out.mp4 --csv samples.csv -- ./100mb-hevc-linux-v1.1.6 input-4K60.mp4 out.mp4
-```
-
-| Option | Meaning |
-|:---|:---|
-| `--label` | Name stored in the JSON line (required) |
-| `--output` | Encoded file whose size is reported as `output_mb` |
-| `--csv` | Also write per-sample rows to this file |
-| `--interval` | Sampling interval in seconds (default `0.5`) |
-| `--` | Everything after it is the command to measure |
-
-GPU load comes from DRM fdinfo on Linux (Intel and AMD, no root needed) and from `nvidia-smi` on any OS (first NVIDIA GPU). CPU time is exact on Linux and macOS and sampled on Windows (`tree_cpu_source` in the output says which).
-
 ### CI/CD Workflows
 
 | Workflow | Runs on | Does |
 |:---|:---|:---|
 | **CI** (`ci.yml`) | Pull requests, pushes to `main`, manual | `ruff check` and `pytest` on Python 3.11 and 3.13 |
 | **Deploy Architecture Page** (`deploy.yml`) | Pushes to `main` that change `docs/`, manual | Publishes `docs/` to GitHub Pages |
-| **Build & Release** (`release.yml`) | Creating a GitHub release, manual | Builds the executables on Windows, Linux and macOS; attaches them to the release (manual runs only keep them as run artifacts) |
+| **Build & Release** (`release.yml`) | Publishing a GitHub release (including pre-releases and drafts once published), manual | Builds the executables on Windows, Linux and macOS, plus the Windows installer; attaches them to the release (manual runs only keep them as run artifacts) |
 
 ### Releasing
 
@@ -224,14 +223,14 @@ Considering the wide variety of hardware configurations, the script uses a fallb
 > `*_nvenc` > `*_vaapi` > `*_videotoolbox` > `*_amf` > `*_qsv` > `libx265` / `libx264` (CPU)
 
 > [!NOTE]
-> All hardware encoders (NVENC, AMF, VAAPI, QSV, VideoToolbox) use parallel split single-pass encoding with hardware rate control (including on-chip lookahead and adaptive quantization). Software fallback (libx265 / libx264) uses a contiguous single-pass pipeline.
+> All hardware encoders (NVENC, AMF, VAAPI, QSV, VideoToolbox) use parallel split single-pass encoding with hardware rate control. NVENC and QSV add lookahead, and NVENC and AMF add adaptive quantization. Software fallback (libx265 / libx264) uses a contiguous single-pass pipeline.
 > Hardware encodes pick the most GPU-resident pipeline that works on your input, probed automatically on a one-second sample of the real file (no flags needed):
 > - **zero-copy**: hardware decode, hardware scale and hardware encode, so frames never return to system memory.
 > - **upload**: software decode, then upload, hardware scale and hardware encode. Used when the GPU cannot decode the source format (for example VP9 or H.264 4:2:2 on VA-API).
-> - **legacy**: the previous pipeline with CPU scaling. Used when neither of the above works, and as an automatic retry if an encode fails part-way.
+> - **legacy**: the previous pipeline, which scales on the CPU except with NVENC. Used when neither of the above works, and as an automatic retry if an encode fails part-way (except when converting HDR to SDR, which has only one pipeline).
 >
 > The benefit is near-zero CPU use during the encode, which keeps the machine responsive while gaming or streaming. Wall-clock time is not guaranteed to improve, since the GPU encoder is often the limit. The selected tier is shown in the result summary.
-> If your dedicated GPU is being bypassed in favor of integrated GPU or CPU encoding, you'll need to manually change the priority logic in the script to suit your hardware setup. Or, you may simply remove unwanted encoders from the priority list in the script, build the executable again, and use that custom build.
+> If your dedicated GPU is being bypassed in favor of integrated GPU or CPU encoding, first check its driver (NVIDIA needs 610.0 or newer, see [Requirements](#requirements)). Otherwise, you'll need to manually change the priority logic in the script to suit your hardware setup. Or, you may simply remove unwanted encoders from the priority list in the script, build the executable again, and use that custom build.
 
 ## Reporting Problems
 
@@ -239,19 +238,35 @@ If a compression fails, a `<video name>_compress-error.log` file is written next
 
 ## Known Issues
 
-- **Brief stutter at the split midpoint (parallel-split hardware encodes):** the two halves are encoded in parallel and concatenated, which leaves a video timestamp gap of roughly 40-100 ms at the midpoint. Playback stutters briefly there, and the video runs slightly behind the audio for the second half. A fix is planned for the next release.
-- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically, so the executable exits immediately with a "cannot open shared object file" error on systems without them. The next release will link these statically in [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds), removing this requirement.
+- **Linux executables do not start on older distributions** such as Ubuntu 22.04 and Debian 12, which have glibc older than 2.38. This affects every release since v1.0.0, whatever the input video. On those, [run from source](#how-to-run-python-cli) with Python 3.11+ and your distribution's FFmpeg.
+- **Linux executables depend on system VA-API libraries:** the bundled FFmpeg links `libva2`, `libva-drm2` and `libdrm2` dynamically. Desktop distributions ship them by default; minimal server, container and WSL installs may not. Without them, versions before v1.3.0 fail with a "cannot open shared object file" error; from v1.3.0, the executable stops with a message naming the missing library and the install command for your distribution (for example `sudo apt install libva2 libva-drm2 libdrm2`).
+- **GTX 900 and 10 series cards cannot use NVENC:** the bundled FFmpeg (v1.1.4 and later) needs NVIDIA driver 610.0 or higher, and driver 580 is the last branch for Maxwell, Pascal and Volta GPUs. The app uses the next available encoder instead, down to the CPU, as it does on any older driver.
+- **VA-API can badly overshoot low targets on long videos:** a 4-minute 1080p60 video at 20 MB came out at 26.3 MB, while NVENC produced 18.8 MB. A smaller target does not help once the encoder is at its lowest bitrate (15 MB still gave 26.1 MB), so use H.264 instead, which gave 18.6 MB at 20 MB on the same Intel GPU.
+- **Portrait videos can be downscaled below 720 pixels wide** (for example 406x720 or 608x1080). With a rotation tag this happens when converting HDR to SDR or using a CPU encoder; without one, with any encoder.
+- **Unsupported inputs:** the bundled FFmpeg cannot read `.ts`, `.mts`, `.m2ts`, `.wmv`, `.mpg` and `.mpeg` files, or VP8 (some `.webm`), ProRes (some `.mov`) and FLV1 (old `.flv`) video.
+- **Lossless audio the bundled FFmpeg cannot decode** (ALAC, big-endian PCM) is copied at its full bitrate (up to about 11 MB per minute for 16-bit 48 kHz stereo), which leaves less room for the video and can slightly exceed small targets.
+- **8-bit PCM and ADPCM audio** (found in older `.avi` files) makes the encode fail.
+- **Dolby Vision:** profile 5 is not recognised as HDR and comes out with wrong colours. Profile 8.4 is handled as HLG. Dolby Vision metadata is not kept.
+- **Only the first audio track is kept**, and subtitles are not copied.
+- **Very short clips with a single keyframe** can fail to encode.
+- **Drop one video at a time:** with two, the second is taken as the output file and overwritten.
+- **Very wide videos can fail on a GPU encoder** when the target size does not downscale them, for example above 4,096 pixels wide for H.264 on NVENC. The app does not fall back to the CPU encoder.
+
+## Roadmap
+
+- **WinGet:** `winget install SimpNick6703.VideoCompression` for the right-click menu installer.
+- **PyPI:** `pip install videocompress`.
 
 ## Privacy Policy
 
 This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
-Video-Compression runs entirely offline: it reads the input video and writes the compressed video, plus an error log next to the input if a compression fails. The bundled FFmpeg is built with networking disabled. The program is portable: it installs nothing and changes no system settings, and deleting the executable removes it completely.
+Video-Compression runs entirely offline: it reads the input video and writes the compressed video, plus an error log next to the input if a compression fails. The bundled FFmpeg is built with networking disabled. The preset executables are portable: they install nothing and change no system settings, and deleting the executable removes it completely. The optional Windows installer adds the right-click menu entries under the current user's registry (`HKEY_CURRENT_USER\Software\Classes`), and its uninstaller removes them along with the installed files.
 
 ## License
 
-This project and its prebuilt standalone executables (which bundle static `ffmpeg` and `ffprobe` binaries from [SimpNick6703/ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)) are distributed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
+This project and its prebuilt standalone executables (which bundle `ffmpeg` and `ffprobe` binaries from [SimpNick6703/ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds)) are distributed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
 
-See the [LICENSE](LICENSE) file for the full license text. Each release also includes a `THIRD_PARTY_NOTICES-<platform>.txt` file with this license and the licenses of everything bundled in the executables (FFmpeg, x264, x265, Python, PyInstaller and the Python packages used). The notices also list the exact source revisions of the bundled FFmpeg build, whose source is available from the linked upstream repositories and [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds).
+See the [LICENSE](LICENSE) file for the full license text. Each release also includes a `THIRD_PARTY_NOTICES-<platform>.txt` file with this license and the licenses of everything bundled in the executables (FFmpeg, x264, x265, zimg, dav1d, Python, PyInstaller and the Python packages used). The notices also list the exact source revisions of the bundled FFmpeg build, whose source is available from the linked upstream repositories and [ffmpeg-minimal-builds](https://github.com/SimpNick6703/ffmpeg-minimal-builds).
 
 

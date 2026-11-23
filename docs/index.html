@@ -81,10 +81,11 @@
                 </div>
                 
                 <!-- Right Side: Nav -->
-                <div class="flex items-center gap-2 md:gap-4 relative z-50">
-                    <nav class="flex space-x-1 md:space-x-6 overflow-x-auto w-full md:w-auto justify-center pb-1 md:pb-0">
+                <div class="flex items-center gap-2 md:gap-4 relative z-50 min-w-0 max-w-full">
+                    <nav class="flex space-x-1 lg:space-x-6 overflow-x-auto min-w-0 w-full md:w-auto justify-start sm:justify-center md:justify-start pb-1 md:pb-0">
                         <button data-target="sec-pipeline" class="nav-btn tab-active pb-1 px-2 text-sm font-semibold transition-all hover:text-cyan-400 whitespace-nowrap">Pipeline</button>
                         <button data-target="sec-dataflow" class="nav-btn pb-1 px-2 text-sm font-semibold text-slate-400 transition-all hover:text-cyan-400 whitespace-nowrap">Dataflow</button>
+                        <button data-target="sec-color" class="nav-btn pb-1 px-2 text-sm font-semibold text-slate-400 transition-all hover:text-cyan-400 whitespace-nowrap">HDR &amp; Color</button>
                         <button data-target="sec-engine" class="nav-btn pb-1 px-2 text-sm font-semibold text-slate-400 transition-all hover:text-cyan-400 whitespace-nowrap">Engine</button>
                         <button data-target="sec-calc" class="nav-btn pb-1 px-2 text-sm font-semibold text-slate-400 transition-all hover:text-cyan-400 whitespace-nowrap">BPP Calculator</button>
                         <button data-target="sec-hw" class="nav-btn pb-1 px-2 text-sm font-semibold text-slate-400 transition-all hover:text-cyan-400 whitespace-nowrap">Hardware</button>
@@ -118,7 +119,7 @@
                             Download Latest Release
                         </a>
                         <div class="bg-slate-900/80 border border-slate-700 p-2 rounded-md font-mono text-[10px] md:text-xs text-slate-400">
-                            <span class="text-emerald-400">$</span> ./20mb-hevc-win64.exe <span class="text-violet-300">input.mp4</span> <span class="text-slate-500"># Fast CLI Usage</span>
+                            <span class="text-emerald-400">$</span> ./20mb-hevc-win64-v1.3.0.exe <span class="text-violet-300">input.mp4</span> <span class="text-slate-500"># Fast CLI Usage</span>
                         </div>
                     </div>
                     
@@ -172,7 +173,7 @@
                             <i class="fa-solid fa-file-video"></i>
                         </div>
                         <h4 class="font-bold text-white mb-2">1. Input</h4>
-                        <p class="text-xs text-slate-400">Drag & drop a video onto the preset executable.</p>
+                        <p class="text-xs text-slate-400">Drag & drop a video onto a preset executable, or right-click it on Windows with the installer.</p>
                     </div>
 
                     <div class="step-connector flex flex-col items-center glass-panel p-6 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">
@@ -180,7 +181,7 @@
                             <i class="fa-solid fa-magnifying-glass-chart"></i>
                         </div>
                         <h4 class="font-bold text-white mb-2">2. Probe</h4>
-                        <p class="text-xs text-slate-400"><span class="font-mono text-violet-300">ffprobe</span> extracts duration, resolution, and fps.</p>
+                        <p class="text-xs text-slate-400"><span class="font-mono text-violet-300">ffprobe</span> extracts duration, resolution, fps, audio and HDR tags. A video already under the target stops here.</p>
                     </div>
 
                     <div class="step-connector flex flex-col items-center glass-panel p-6 rounded-xl border border-fuchsia-500/30 flex items-center justify-center mb-4 text-fuchsia-400 text-xl shadow-[0_0_15px_rgba(217,70,239,0.3)]">
@@ -188,7 +189,7 @@
                             <i class="fa-solid fa-scissors"></i>
                         </div>
                         <h4 class="font-bold text-white mb-2">3. Smart Split</h4>
-                        <p class="text-xs text-slate-400">Divides video based on 50% bit density mark to balance thread load.</p>
+                        <p class="text-xs text-slate-400">With a GPU encoder, divides the video at the keyframe nearest half of its bytes. CPU encodes are not split.</p>
                     </div>
 
                     <div class="step-connector flex flex-col items-center glass-panel p-6 rounded-xl border border-slate-700/50 hover:bg-slate-800/50 transition-colors">
@@ -204,7 +205,7 @@
                             <i class="fa-solid fa-layer-group"></i>
                         </div>
                         <h4 class="font-bold text-white mb-2">5. Stitch</h4>
-                        <p class="text-xs text-slate-400">Concatenates encoded chunks with <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline font-mono text-xs">+faststart</a> for instant progressive streaming.</p>
+                        <p class="text-xs text-slate-400">Joins the halves and adds the audio, with <a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline font-mono text-xs">+faststart</a> for instant progressive streaming.</p>
                     </div>
 
                 </div>
@@ -223,6 +224,7 @@
                 <p class="mt-3 max-w-3xl text-base sm:text-lg text-slate-300 leading-relaxed">
                     How compressed packets and raw frames move between storage, system memory, the PCIe bus and the GPU, and why keeping every frame on the GPU matters once the video has to be downscaled.
                 </p>
+                <p class="df-sub">One exception: converting HDR to SDR takes frames through the CPU. See <a href="#sec-color-tonemap" class="text-cyan-300 underline hover:text-cyan-200">HDR &amp; Color</a>.</p>
             </div>
 
             <!-- In-section navigation -->
@@ -252,7 +254,7 @@
                     </div>
                     <div class="df-stat border-l-cyan-400">
                         <div class="df-label">Host CPU load</div>
-                        <div class="df-stat-value text-cyan-300">~30&ndash;40% &rarr; &lt; 5%</div>
+                        <div class="df-stat-value text-cyan-300">~52% &rarr; ~7%</div>
                         <div class="df-sub">Scaling moves from CPU cores to the GPU</div>
                     </div>
                     <div class="df-stat border-l-violet-400">
@@ -264,7 +266,7 @@
 
                 <div class="df-card mt-4">
                     <div class="df-card-head">
-                        <span class="df-card-title">Test clip used for every number on this page</span>
+                        <span class="df-card-title">Test clip used for every number in this tab</span>
                         <span class="df-chip text-cyan-300 border-cyan-500/40 bg-cyan-950/40">Reference baseline</span>
                     </div>
                     <dl class="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 p-5">
@@ -276,7 +278,7 @@
                         <div>
                             <dt class="df-label">Duration</dt>
                             <dd class="df-value text-white">236.95 s</dd>
-                            <dd class="df-sub">14,217 frames (03:56.95)</dd>
+                            <dd class="df-sub">14,216 frames (03:56.95)</dd>
                         </div>
                         <div>
                             <dt class="df-label">Input size</dt>
@@ -286,7 +288,7 @@
                         <div>
                             <dt class="df-label">Target size</dt>
                             <dd class="df-value text-emerald-400">&lt; 100.00 MB</dd>
-                            <dd class="df-sub">3,446 kbps &middot; 78.6% smaller</dd>
+                            <dd class="df-sub">88.48 MB out &middot; 3,132 kbps &middot; 80.6% smaller</dd>
                         </div>
                     </dl>
                     <details class="df-details border-t border-slate-800">
@@ -294,8 +296,8 @@
                         <div class="df-details-body space-y-3">
                             <p>One raw frame in NV12 / YUV420p takes width &times; height &times; 1.5 bytes.</p>
                             <ul class="space-y-1.5 font-mono text-sm">
-                                <li><span class="text-cyan-400 font-bold">1080p:</span> 1920 &times; 1080 &times; 1.5 = 3,110,400 B/frame (3.11 MB) &times; 14,217 = <strong class="text-white">44.22 GB</strong> <span class="text-slate-400">(186.6 MB/s per 60 fps worker)</span></li>
-                                <li><span class="text-amber-400 font-bold">720p:</span> 1280 &times; 720 &times; 1.5 = 1,382,400 B/frame (1.38 MB) &times; 14,217 = <strong class="text-white">19.65 GB</strong> <span class="text-slate-400">(82.9 MB/s per 60 fps worker)</span></li>
+                                <li><span class="text-cyan-400 font-bold">1080p:</span> 1920 &times; 1080 &times; 1.5 = 3,110,400 B/frame (3.11 MB) &times; 14,216 = <strong class="text-white">44.22 GB</strong> <span class="text-slate-400">(186.6 MB/s at playback speed)</span></li>
+                                <li><span class="text-amber-400 font-bold">720p:</span> 1280 &times; 720 &times; 1.5 = 1,382,400 B/frame (1.38 MB) &times; 14,216 = <strong class="text-white">19.65 GB</strong> <span class="text-slate-400">(82.9 MB/s at playback speed)</span></li>
                             </ul>
                             <p><strong class="text-cyan-400">Native 1080p:</strong> frames never leave VRAM. Only the compressed bitstream crosses PCIe: 457 MB in + 88 MB out &asymp; <strong class="text-white">545 MB</strong>.</p>
                             <p><strong class="text-amber-400">Downscaled to 720p (legacy hybrid):</strong> FFmpeg downloads every decoded 1080p frame to system RAM for CPU Lanczos scaling (44.22 GB device &rarr; host), then uploads the 720p frames back to NVENC (19.65 GB host &rarr; device). With the bitstream that is &asymp; <strong class="text-amber-300">64.41 GB</strong> of PCIe traffic.</p>
@@ -364,7 +366,7 @@
                                 <div class="df-cell">
                                     <div class="df-label">Demux buffers</div>
                                     <div class="df-value text-cyan-400">O(1) streaming</div>
-                                    <div class="df-sub">&lt; 15 MB RAM footprint</div>
+                                    <div class="df-sub">Packets are read as needed</div>
                                 </div>
                                 <div class="df-cell">
                                     <div class="df-label" id="df-scale-label">CPU Lanczos Scale</div>
@@ -378,7 +380,7 @@
                             <div class="df-bay-head">
                                 <span class="df-dot bg-amber-400"></span>
                                 <span class="df-bay-title">PCIe 4.0 x16 bus</span>
-                                <span id="df-bus-status" class="df-chip text-emerald-400">Minimal (~2 MB/s)</span>
+                                <span id="df-bus-status" class="df-chip text-emerald-400">Minimal (bitstream only)</span>
                             </div>
                             <div class="df-bay-grid">
                                 <div class="df-cell">
@@ -504,7 +506,7 @@
                                 <h4 id="path1-title" class="df-path-title">CPU software decode bottleneck</h4>
                                 <p class="df-path-desc"><span class="df-code">-hwaccel cuda</span> was omitted, so every frame was decoded on the CPU while the GPU decoder sat idle and NVENC waited for frames.</p>
                             </div>
-                            <span class="df-chip text-purple-300 border-purple-500/40 bg-purple-950/40">CPU 91% &middot; NVDEC idle</span>
+                            <span class="df-chip text-purple-300 border-purple-500/40 bg-purple-950/40">CPU 80% &middot; NVDEC idle</span>
                         </header>
 
                         <div class="mermaid-diagram-wrapper">
@@ -515,11 +517,11 @@
 
                         <div class="df-domains">
                             <section class="df-domain border-t-purple-400 bg-purple-950/10">
-                                <h5 class="df-domain-title"><span>System RAM &amp; CPU</span><span class="df-domain-tag text-purple-300">Pegged at 91%</span></h5>
+                                <h5 class="df-domain-title"><span>System RAM &amp; CPU</span><span class="df-domain-tag text-purple-300">80% of all threads</span></h5>
                                 <ul class="df-lanes">
                                     <li class="df-lane border-purple-500/40">
                                         <span class="df-label text-purple-300">CPU software decode (avcodec)</span>
-                                        <span class="df-lane-value">14,217 frames decoded on CPU</span>
+                                        <span class="df-lane-value">14,216 frames decoded on CPU</span>
                                         <span class="df-sub block">Heavy thread contention across cores</span>
                                     </li>
                                     <li class="df-lane border-purple-500/40">
@@ -528,7 +530,7 @@
                                         <span class="df-sub block">Compounds the CPU work queue</span>
                                     </li>
                                 </ul>
-                                <p class="df-domain-foot text-purple-300">CPU throttling: severe frame drops, 42.1 s encode time</p>
+                                <p class="df-domain-foot text-purple-300">CPU-bound: 30.1 s encode time</p>
                             </section>
 
                             <section class="df-domain border-t-purple-400">
@@ -566,7 +568,7 @@
 
                         <p class="df-callout border-l-purple-400">
                             <strong>Why NVDEC is essential:</strong>
-                            Path 1 moved less data over PCIe (~19.7 GB vs ~64.4 GB in Path 2), but decoding 1080p60 on the CPU held host cores at 91%. NVENC was starved for frames and the encode took 42.1 s. Path 2 restored NVDEC hardware decoding and cut wall time to 22.4 s.
+                            Path 1 moved less data over PCIe (~19.7 GB vs ~64.4 GB in Path 2), but decoding 1080p60 on the CPU took 80% of all CPU threads. NVENC was starved for frames and the encode took 30.1 s. Path 2 restored NVDEC hardware decoding and cut wall time to 24.0 s.
                         </p>
                     </article>
 
@@ -599,12 +601,12 @@
                                     <li class="df-lane border-amber-500/40 bg-amber-950/20">
                                         <span class="df-label text-amber-300">Decoded 1080p frames (D2H)</span>
                                         <span class="df-lane-value text-amber-400">44.22 GB raw NV12</span>
-                                        <span class="df-sub block">14,217 frames downloaded</span>
+                                        <span class="df-sub block">14,216 frames downloaded</span>
                                     </li>
                                     <li class="df-lane">
                                         <span class="df-label">CPU Lanczos filtergraph</span>
                                         <span class="df-lane-value">scale=-2:720 (libswscale)</span>
-                                        <span class="df-sub block">~30&ndash;40% CPU utilization</span>
+                                        <span class="df-sub block">Encode uses ~52% of the CPU</span>
                                     </li>
                                     <li class="df-lane border-amber-500/40 bg-amber-950/20">
                                         <span class="df-label text-amber-300">Scaled 720p frames (H2D)</span>
@@ -635,7 +637,7 @@
                                         <span class="df-sub block">NVENC &rarr; disk (compressed bitstream)</span>
                                     </li>
                                 </ul>
-                                <p class="df-domain-foot text-amber-300">Total PCIe volume: 64.41 GB (1.6 GB/s sustained)</p>
+                                <p class="df-domain-foot text-amber-300">Total PCIe volume: 64.41 GB (~2.7 GB/s over 24 s)</p>
                             </section>
 
                             <section class="df-domain border-t-violet-400">
@@ -643,7 +645,7 @@
                                 <ul class="df-lanes">
                                     <li class="df-lane">
                                         <span class="df-label text-violet-300">NVDEC decoder</span>
-                                        <span class="df-lane-value">Active (~88% engine)</span>
+                                        <span class="df-lane-value">Active (~57% engine)</span>
                                         <span class="df-sub block">Decodes into a VRAM surface</span>
                                     </li>
                                     <li class="df-lane border-amber-500/30">
@@ -653,7 +655,7 @@
                                     </li>
                                     <li class="df-lane">
                                         <span class="df-label text-violet-300">NVENC encoder</span>
-                                        <span class="df-lane-value">Active (~91% engine)</span>
+                                        <span class="df-lane-value">Active (~81% engine)</span>
                                         <span class="df-sub block">Encodes the 720p stream from host RAM</span>
                                     </li>
                                 </ul>
@@ -663,7 +665,7 @@
 
                         <p class="df-callout border-l-amber-400">
                             <strong>Trade-off:</strong>
-                            Moving decode to NVDEC removed the 91% CPU decode bottleneck of Path 1. But because scaling still ran in CPU software, the 44.22 GB decoded stream and the 19.65 GB scaled stream ping-ponged across PCIe.
+                            Moving decode to NVDEC removed the CPU decode bottleneck of Path 1. But because scaling still ran in CPU software, the 44.22 GB decoded stream and the 19.65 GB scaled stream ping-ponged across PCIe.
                         </p>
                     </article>
 
@@ -704,7 +706,7 @@
                                         <span class="df-sub block">No pixel buffers allocated</span>
                                     </li>
                                 </ul>
-                                <p class="df-domain-foot text-emerald-300">Host footprint: &lt; 15 MB RAM &middot; &lt; 3% CPU</p>
+                                <p class="df-domain-foot text-emerald-300">Whole process tree: ~709 MB RAM &middot; ~7% CPU</p>
                             </section>
 
                             <section class="df-domain border-t-emerald-400 bg-emerald-950/10">
@@ -712,11 +714,11 @@
                                 <ul class="df-lanes">
                                     <li class="df-lane border-emerald-500/30">
                                         <div class="df-lane-row"><span class="df-label">1 &middot; H2D inbound</span><span class="df-value text-sm text-cyan-400">457.00 MB</span></div>
-                                        <span class="df-sub block">Compressed bitstream only (~1.9 MB/s)</span>
+                                        <span class="df-sub block">Compressed bitstream only (~19 MB/s)</span>
                                     </li>
                                     <li class="df-lane border-emerald-500/30">
                                         <div class="df-lane-row"><span class="df-label">2 &middot; D2H outbound</span><span class="df-value text-sm text-emerald-400">88.50 MB</span></div>
-                                        <span class="df-sub block">Compressed bitstream only (~0.37 MB/s)</span>
+                                        <span class="df-sub block">Compressed bitstream only (~3.7 MB/s)</span>
                                     </li>
                                     <li class="df-lane border-emerald-500/40 bg-emerald-950/30">
                                         <span class="df-label text-emerald-300">PCIe bandwidth saved</span>
@@ -746,7 +748,7 @@
                                         <span class="df-sub block">No pixel transfer latency</span>
                                     </li>
                                 </ul>
-                                <p class="df-domain-foot text-emerald-300">Estimated ~15&ndash;18 s encode</p>
+                                <p class="df-domain-foot text-emerald-300">Measured 23.8 s encode</p>
                             </section>
                         </div>
 
@@ -763,7 +765,7 @@
                 <div class="df-block-head">
                     <p class="df-eyebrow">4 &middot; Benchmarks</p>
                     <h3 class="df-title">Every version side by side</h3>
-                    <p class="df-lead">Same test clip: 1080p60, 236.95 s, 14,217 frames, 457.00 MB, NVIDIA GPU. Values marked <em>est.</em> are estimates, not measurements.</p>
+                    <p class="df-lead">Same test clip: 1080p60, 236.95 s, 14,216 frames, 457.00 MB, RTX 4060 laptop with a Ryzen 7 7435HS. Release executables, mean of two runs; Current is v1.3.0-rc5. PCIe volumes are calculated, everything else is measured.</p>
                 </div>
 
                 <div class="df-card overflow-hidden">
@@ -808,39 +810,39 @@
                                     <td class="df-col-current text-emerald-400 font-bold">0.55 GB (&minus;99.1%)</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">System RAM I/O</th>
-                                    <td class="text-rose-400">&gt; 200 GB</td>
-                                    <td>&gt; 60 GB</td>
-                                    <td class="text-amber-300">~64 GB</td>
-                                    <td class="df-col-current text-emerald-400 font-bold">&lt; 1 GB</td>
+                                    <th scope="row">Peak process RAM</th>
+                                    <td>661 MB</td>
+                                    <td>964 MB</td>
+                                    <td class="text-amber-300">902 MB</td>
+                                    <td class="df-col-current text-emerald-400 font-bold">709 MB</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">CPU utilization</th>
-                                    <td>43%</td>
-                                    <td class="text-rose-400 font-bold">91% (NVENC starved)</td>
-                                    <td>~30&ndash;40%</td>
-                                    <td class="df-col-current text-emerald-400 font-bold">&lt; 5%</td>
+                                    <th scope="row">CPU, share of all threads</th>
+                                    <td>38%</td>
+                                    <td class="text-rose-400 font-bold">80% (NVENC starved)</td>
+                                    <td>52%</td>
+                                    <td class="df-col-current text-emerald-400 font-bold">7%</td>
                                 </tr>
                                 <tr>
                                     <th scope="row">GPU decode engine</th>
-                                    <td>~88%</td>
+                                    <td>70%</td>
                                     <td class="text-slate-400">0% (idle)</td>
-                                    <td class="text-cyan-400">~88%</td>
-                                    <td class="df-col-current text-emerald-400 font-bold">~88%</td>
+                                    <td class="text-cyan-400">57%</td>
+                                    <td class="df-col-current text-emerald-400 font-bold">56%</td>
                                 </tr>
                                 <tr>
                                     <th scope="row">GPU 3D / CUDA engine</th>
-                                    <td>~91%</td>
-                                    <td class="text-slate-400">~4%</td>
-                                    <td class="text-slate-400">~5&ndash;10%</td>
-                                    <td class="df-col-current text-emerald-400 font-bold">~35&ndash;50% (scale_cuda)</td>
+                                    <td>34%</td>
+                                    <td class="text-slate-400">15%</td>
+                                    <td class="text-slate-400">35%</td>
+                                    <td class="df-col-current text-emerald-400 font-bold">21% (scale_cuda)</td>
                                 </tr>
                                 <tr>
                                     <th scope="row">Wall-clock encode</th>
-                                    <td class="text-rose-400 font-bold">37.81 s</td>
-                                    <td class="text-purple-400">23.22 s (CPU-bound)</td>
-                                    <td class="text-amber-300 font-bold">22.4&ndash;23.0 s</td>
-                                    <td class="df-col-current text-emerald-400 font-bold">~15&ndash;18 s (est.)</td>
+                                    <td class="text-rose-400 font-bold">38.7 s</td>
+                                    <td class="text-purple-400">30.1 s (CPU-bound)</td>
+                                    <td class="text-amber-300 font-bold">24.0 s</td>
+                                    <td class="df-col-current text-emerald-400 font-bold">23.8 s</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -849,7 +851,7 @@
 
                 <p class="df-callout mt-4">
                     <strong>Takeaway:</strong>
-                    The single-pass legacy hybrid (Path 2) halved PCIe traffic compared with v1.1.5 and cut wall-clock time from 37.8 s to 22.4 s by dropping the first pass and decoding on NVDEC. The zero-copy pipeline (Path 3) then removes a further 99.1% of PCIe traffic, down to 545 MB, and frees the host CPU and RAM almost entirely.
+                    The single-pass legacy hybrid (Path 2) halved PCIe traffic compared with v1.1.5 and cut wall-clock time from 38.7 s to 24.0 s by dropping the first pass and decoding on NVDEC. The zero-copy pipeline (Path 3) then removes a further 99.1% of PCIe traffic, down to 545 MB, and cuts CPU use from 52% to 7%. It is not faster (23.8 s), because NVENC is now the limit.
                 </p>
             </div>
 
@@ -883,16 +885,12 @@
                     <li class="df-step border-t-emerald-400">
                         <p class="df-eyebrow text-emerald-400">Step 4 &middot; Stitch</p>
                         <h4 class="text-base font-bold text-white">Join without re-encoding</h4>
-                        <pre class="df-pre">ffmpeg -f concat -safe 0 -i list.txt
-  -c copy -movflags +faststart</pre>
-                        <p>The concat demuxer joins both halves in under a second and moves the index (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-emerald-300 underline hover:text-emerald-200">moov box</a>) to the front of the file so it can start playing before it fully downloads.</p>
+                        <pre class="df-pre">ffmpeg -f concat -safe 0 -i list.txt -i input
+  -map 0:v:0 -map 1:a:0? -c:v copy -c:a copy
+  -movflags +faststart</pre>
+                        <p>Both halves are encoded without audio. FFmpeg joins the video halves without re-encoding, takes the audio from the source in one piece (copied, or re-encoded to AAC when the audio rule says so), and moves the index (<a href="https://www.mpegflow.com/topics/containers/mp4-faststart" target="_blank" rel="noopener noreferrer" class="text-emerald-300 underline hover:text-emerald-200">moov box</a>) to the front of the file so it can start playing before it fully downloads.</p>
                     </li>
                 </ol>
-
-                <p class="df-callout border-l-amber-400 mt-4">
-                    <strong>Known issue:</strong>
-                    the stitch currently leaves a 40&ndash;100 ms gap in video timestamps at <strong class="text-white">T</strong>. Playback stutters briefly there and video runs slightly behind audio for the second half. A fix is planned for the next release; see <a href="https://github.com/SimpNick6703/Video-Compression#known-issues" target="_blank" rel="noopener noreferrer" class="text-amber-300 underline hover:text-amber-200">Known Issues</a>.
-                </p>
 
                 <details class="df-details df-card mt-4">
                     <summary>Show the full split flowchart</summary>
@@ -934,12 +932,522 @@
 
         </section>
 
+        <!-- SECTION: HDR & COLOR -->
+        <section id="sec-color" class="content-section hidden-section animate-fade-in max-w-6xl mx-auto px-4 py-10">
+
+            <div class="mb-6">
+                <p class="df-eyebrow">Background &middot; Decisions &middot; Measurements</p>
+                <h2 class="mt-2 text-3xl sm:text-4xl font-bold text-white tracking-tight font-heading">
+                    <i class="fa-solid fa-circle-half-stroke mr-3 text-amber-400" aria-hidden="true"></i>HDR, Color Depth and Codecs
+                </h2>
+                <p class="mt-3 max-w-3xl text-base sm:text-lg text-slate-300 leading-relaxed">
+                    These three properties of a video decide whether it can stay HDR, whether it can stay on the GPU, and how long compressing it takes. They are often mixed up, but each answers a different question.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="df-stat border-l-cyan-400">
+                    <div class="df-label">Codec</div>
+                    <div class="df-stat-value text-cyan-300">How is it packed?</div>
+                    <div class="df-sub">H.264, HEVC, AV1: the method that compresses the frames</div>
+                </div>
+                <div class="df-stat border-l-violet-400">
+                    <div class="df-label">Color depth</div>
+                    <div class="df-stat-value text-violet-300">How fine are the steps?</div>
+                    <div class="df-sub">8-bit or 10-bit: how many shades each channel can store</div>
+                </div>
+                <div class="df-stat border-l-amber-400">
+                    <div class="df-label">Dynamic range</div>
+                    <div class="df-stat-value text-amber-300">What do they mean?</div>
+                    <div class="df-sub">SDR or HDR: how bright and how saturated each value is</div>
+                </div>
+            </div>
+
+            <!-- 1. CODEC -->
+            <div id="sec-color-codec" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">1 &middot; Codec</p>
+                    <h3 class="df-title">The method that compresses the frames</h3>
+                    <p class="df-lead">A codec turns raw frames into a bitstream and back. It is not the file type: <span class="df-code">.mp4</span>, <span class="df-code">.mkv</span> and <span class="df-code">.mov</span> are containers, and each can hold several codecs. Newer codecs need fewer bits for the same quality, but fewer devices can play or encode them.</p>
+                </div>
+                <div class="df-card overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="df-table df-table-text">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Codec</th>
+                                    <th scope="col">Bitrate for similar quality</th>
+                                    <th scope="col">Plays on</th>
+                                    <th scope="col">10-bit GPU encoding</th>
+                                    <th scope="col" class="df-col-current">In Video-Compression</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">H.264 (AVC)</th>
+                                    <td>Baseline (100%)</td>
+                                    <td>Almost everything</td>
+                                    <td>Rare, and 10-bit H.264 rarely plays</td>
+                                    <td class="df-col-current">Output for compatibility, always SDR when the source is HDR</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HEVC (H.265)</th>
+                                    <td>Roughly 50&ndash;70%</td>
+                                    <td>Most devices from recent years</td>
+                                    <td>Common (Main 10)</td>
+                                    <td class="df-col-current">Default output, can keep HDR</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">AV1</th>
+                                    <td>Roughly 40&ndash;60%</td>
+                                    <td>Newer devices only</td>
+                                    <td>Only on the newest GPUs</td>
+                                    <td class="df-col-current">Input only</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <p class="df-callout mt-4">
+                    <strong>Why it matters here:</strong>
+                    At a fixed file size, a more efficient codec means better quality. That is why HEVC is the default. AV1 is not offered as an output because too few GPUs can encode it and too few devices can play it.
+                </p>
+            </div>
+
+            <!-- 2. COLOR DEPTH -->
+            <div id="sec-color-depth" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">2 &middot; Color depth</p>
+                    <h3 class="df-title">How many steps exist between black and white</h3>
+                    <p class="df-lead">More bits do not make a video brighter or more colorful. They make the steps between neighboring shades smaller, so smooth skies and glows do not break into visible bands.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="df-card p-5">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <span class="df-card-title">8-bit</span>
+                            <span class="df-sub">256 levels &middot; 16.7 million colors</span>
+                        </div>
+                        <div class="df-ramp df-ramp-coarse mt-3" role="img" aria-label="Gradient with visible bands"></div>
+                        <p class="df-sub mt-3">A raw 4K frame takes 12.4 MB (NV12).</p>
+                    </div>
+                    <div class="df-card p-5">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <span class="df-card-title">10-bit</span>
+                            <span class="df-sub">1,024 levels &middot; 1.07 billion colors</span>
+                        </div>
+                        <div class="df-ramp df-ramp-fine mt-3" role="img" aria-label="Gradient with much finer bands"></div>
+                        <p class="df-sub mt-3">A raw 4K frame takes 24.9 MB (P010).</p>
+                    </div>
+                </div>
+                <p class="df-sub mt-2">The bands are exaggerated (12 steps against 48, the same 1:4 ratio) so the difference shows on any screen.</p>
+                <p class="df-callout mt-4">
+                    <strong>Why it matters here:</strong>
+                    Converting 8-bit to 10-bit cannot bring back shades that were never recorded. The output therefore matches the source: 10-bit HDR stays 10-bit, and 8-bit HDR stays 8-bit.
+                </p>
+            </div>
+
+            <!-- 3. HDR -->
+            <div id="sec-color-hdr" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">3 &middot; Dynamic range</p>
+                    <h3 class="df-title">What the stored numbers mean</h3>
+                    <p class="df-lead">A pixel only stores numbers. Color tags tell the player how to turn them into light. The <em>transfer function</em> maps a number to brightness, and the <em>primaries</em> say which red, green and blue are meant. Read HDR numbers as SDR and the picture looks gray and washed out.</p>
+                </div>
+                <div class="df-card overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="df-table df-table-text">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Property</th>
+                                    <th scope="col"><span class="text-slate-200">SDR</span><span class="df-sub block">BT.709</span></th>
+                                    <th scope="col"><span class="text-amber-300">HDR10</span><span class="df-sub block">PQ</span></th>
+                                    <th scope="col"><span class="text-emerald-300">HLG</span><span class="df-sub block">Hybrid Log-Gamma</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Brightness</th>
+                                    <td>Mastered for about 100 nits</td>
+                                    <td>Absolute, up to 10,000 nits</td>
+                                    <td>Relative to the display, typically 1,000 nits</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Color gamut</th>
+                                    <td>BT.709</td>
+                                    <td>BT.2020</td>
+                                    <td>BT.2020</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Usual color depth</th>
+                                    <td>8-bit</td>
+                                    <td>10-bit</td>
+                                    <td>10-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Often comes from</th>
+                                    <td>Screen recordings, the web</td>
+                                    <td>Game capture, films</td>
+                                    <td>Phones, cameras, broadcast</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Transfer tag the app reads</th>
+                                    <td><span class="df-code">bt709</span> or none</td>
+                                    <td><span class="df-code">smpte2084</span></td>
+                                    <td><span class="df-code">arib-std-b67</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <p class="df-callout mt-4">
+                    <strong>HDR is not the same as 10-bit:</strong>
+                    10-bit SDR and 8-bit HDR both exist. HDR is usually 10-bit because spreading 8 bits over such a wide range shows banding, but it is the transfer tag that makes a video HDR.
+                </p>
+            </div>
+
+            <!-- 4. DECISIONS -->
+            <div id="sec-color-decisions" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">4 &middot; Putting them together</p>
+                    <h3 class="df-title">What happens to your video</h3>
+                    <p class="df-lead">The app reads the transfer tag (from the first frame, or from the container if the frame has none) and the pixel format, then combines them with the output codec and the encoder that is available.</p>
+                </div>
+                <div class="df-card overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="df-table df-table-text">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Source</th>
+                                    <th scope="col">Output codec</th>
+                                    <th scope="col">Result</th>
+                                    <th scope="col">Where frames are processed</th>
+                                    <th scope="col">Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">SDR</th>
+                                    <td>HEVC or H.264</td>
+                                    <td>SDR</td>
+                                    <td class="text-emerald-400 font-bold">GPU when supported</td>
+                                    <td>Nothing to convert</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR 10-bit</th>
+                                    <td>HEVC, GPU encoder</td>
+                                    <td>HDR 10-bit (Main 10)</td>
+                                    <td class="text-emerald-400 font-bold">GPU when supported</td>
+                                    <td>HEVC encoders handle 10-bit, so only the tags need carrying over</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR 8-bit</th>
+                                    <td>HEVC, GPU encoder</td>
+                                    <td>HDR 8-bit (Main)</td>
+                                    <td class="text-emerald-400 font-bold">GPU when supported</td>
+                                    <td>Depth follows the source</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR, any depth</th>
+                                    <td>H.264</td>
+                                    <td>SDR 8-bit</td>
+                                    <td class="text-amber-300 font-bold">CPU tone mapping</td>
+                                    <td>H.264 is picked for compatibility, and HDR H.264 plays wrong on most devices</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR, any depth</th>
+                                    <td>HEVC, CPU encoder</td>
+                                    <td>SDR 8-bit</td>
+                                    <td class="text-amber-300 font-bold">CPU</td>
+                                    <td>The bundled x265 is 8-bit on Linux and macOS</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. TONE MAPPING -->
+            <div id="sec-color-tonemap" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">5 &middot; Tone mapping</p>
+                    <h3 class="df-title">How HDR becomes SDR</h3>
+                    <p class="df-lead">Tone mapping squeezes a very wide brightness range into SDR while keeping detail in the highlights. It works on every pixel of every frame in floating point, after any downscale so that there are fewer pixels to process.</p>
+                </div>
+
+                <ol class="df-steps">
+                    <li class="df-step border-t-cyan-400">
+                        <p class="df-eyebrow">Step 1 &middot; Linearize</p>
+                        <h4 class="text-base font-bold text-white">Numbers to light</h4>
+                        <pre class="df-pre">zscale=t=linear:npl=100
+format=gbrpf32le</pre>
+                        <p>Undo the HDR transfer so the math works on real light, with 1.0 meaning 100 nits.</p>
+                    </li>
+                    <li class="df-step border-t-violet-400">
+                        <p class="df-eyebrow text-violet-400">Step 2 &middot; Gamut</p>
+                        <h4 class="text-base font-bold text-white">BT.2020 to BT.709</h4>
+                        <pre class="df-pre">zscale=p=bt709</pre>
+                        <p>Express each color with the narrower SDR primaries. Without this step colors look faded.</p>
+                    </li>
+                    <li class="df-step border-t-amber-400">
+                        <p class="df-eyebrow text-amber-400">Step 3 &middot; Compress range</p>
+                        <h4 class="text-base font-bold text-white">Hable curve</h4>
+                        <pre class="df-pre">tonemap=hable:desat=0</pre>
+                        <p>Roll off highlights smoothly instead of clipping them to flat white.</p>
+                    </li>
+                    <li class="df-step border-t-emerald-400">
+                        <p class="df-eyebrow text-emerald-400">Step 4 &middot; Re-encode</p>
+                        <h4 class="text-base font-bold text-white">Light to SDR numbers</h4>
+                        <pre class="df-pre">zscale=t=bt709:m=bt709:r=tv</pre>
+                        <p>Apply the SDR curve, tag the result BT.709 and hand it to the encoder.</p>
+                    </li>
+                </ol>
+
+                <p class="df-callout mt-4">
+                    <strong>Two adjustments to step 1:</strong>
+                    HLG adds <span class="df-code">agamma=0</span>, because zscale's faster default applies HLG's system gamma to each channel separately and shifts saturated colors. The exact math makes HLG conversion 1.3&ndash;1.5 times slower at 4K60, and HDR10 does not need it. When the frames lack color tags, the transfer comes from the container and BT.2020 is assumed for primaries and matrix, as both HDR formats specify. Dolby Vision profile 5 carries no HDR transfer tag, so it is not recognized as HDR.
+                </p>
+
+                <details class="df-details df-card mt-4">
+                    <summary>Why tone mapping runs on the CPU</summary>
+                    <div class="df-details-body space-y-3">
+                        <p>FFmpeg has no CUDA tone-mapping filter, so there is no equivalent of <span class="df-code">scale_cuda</span> for this step. These alternatives were prototyped with plain FFmpeg on an RTX 4060 laptop (video only, one encode at a time):</p>
+                        <div class="overflow-x-auto">
+                            <table class="df-table df-table-text">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="text-slate-300">Method, 8.5 s 4K60 HDR10</th>
+                                        <th scope="col">Time</th>
+                                        <th scope="col">CPU</th>
+                                        <th scope="col">Catch</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <th scope="row">zscale and tonemap (shipped)</th>
+                                        <td>26.1 s</td>
+                                        <td>72%</td>
+                                        <td>Uses the CPU, works on every platform</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">libplacebo on Vulkan</th>
+                                        <td>8.3 s</td>
+                                        <td>7%</td>
+                                        <td>Adds a Vulkan renderer and shader compiler to every build, still needs a CPU fallback, and zero-copy from CUDA failed</td>
+                                    </tr>
+                                    <tr>
+                                        <th scope="row">tonemap_opencl</th>
+                                        <td>7.7 s</td>
+                                        <td>14%</td>
+                                        <td>Brighter, warmer picture and the wrong output range</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p><span class="df-code">tonemap_vaapi</span> was also tried on an Intel iGPU. It refuses videos without mastering display metadata, which game recordings often lack.</p>
+                        <p>Only HDR sources saved as H.264, or encoded without a GPU, need this step. That is too narrow a gain for the extra size and upkeep, so it stays on the CPU.</p>
+                    </div>
+                </details>
+            </div>
+
+            <!-- 6. BENCHMARKS -->
+            <div id="sec-color-benchmarks" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">6 &middot; Benchmarks</p>
+                    <h3 class="df-title">What each decision costs</h3>
+                    <p class="df-lead">v1.3.0-rc5 release executables on an RTX 4060 laptop with a Ryzen 7 7435HS. Mean of two runs. CPU is the encode's average share of all 16 threads.</p>
+                </div>
+
+                <div class="df-card overflow-hidden">
+                    <div class="df-card-head">
+                        <span class="df-card-title">Keeping HDR against converting it to SDR</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Source and target</th>
+                                    <th scope="col">Output</th>
+                                    <th scope="col">Time</th>
+                                    <th scope="col">CPU</th>
+                                    <th scope="col">Size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row" rowspan="2">HDR10 HEVC 4K60, 8.5 s<span class="df-sub block">20 MB, stays 4K</span></th>
+                                    <td class="text-emerald-400">HEVC, HDR kept</td>
+                                    <td>8.5 s</td>
+                                    <td><span class="df-meter"><span class="bg-emerald-400" style="width:2%"></span></span>2%</td>
+                                    <td>16.12 MB</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">H.264, to SDR</td>
+                                    <td>31.0 s</td>
+                                    <td><span class="df-meter"><span class="bg-amber-400" style="width:72%"></span></span>72%</td>
+                                    <td>16.50 MB</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="2">HDR10 HEVC 4K60, 12 s<span class="df-sub block">20 MB, scaled to 1440p</span></th>
+                                    <td class="text-emerald-400">HEVC, HDR kept</td>
+                                    <td>6.2 s</td>
+                                    <td><span class="df-meter"><span class="bg-emerald-400" style="width:3%"></span></span>3%</td>
+                                    <td>17.20 MB</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">H.264, to SDR</td>
+                                    <td>21.4 s</td>
+                                    <td><span class="df-meter"><span class="bg-amber-400" style="width:72%"></span></span>72%</td>
+                                    <td>16.73 MB</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="2">HDR10 AV1 720p60, 17 s<span class="df-sub block">5 MB, stays 720p</span></th>
+                                    <td class="text-emerald-400">HEVC, HDR kept</td>
+                                    <td>3.9 s</td>
+                                    <td><span class="df-meter"><span class="bg-emerald-400" style="width:3%"></span></span>3%</td>
+                                    <td>4.64 MB</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">H.264, to SDR</td>
+                                    <td>9.3 s</td>
+                                    <td><span class="df-meter"><span class="bg-amber-400" style="width:52%"></span></span>52%</td>
+                                    <td>4.53 MB</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="df-card overflow-hidden mt-4">
+                    <div class="df-card-head">
+                        <span class="df-card-title">Against v1.2.0, HEVC</span>
+                        <span class="df-sub">110 MB: mean of two runs. 20 MB: one run.</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">SDR source and target</th>
+                                    <th scope="col">Version</th>
+                                    <th scope="col">Time</th>
+                                    <th scope="col">Size</th>
+                                    <th scope="col">Video bitrate</th>
+                                    <th scope="col">Gap at split</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row" rowspan="2">4K60, 170 s<span class="df-sub block">110 MB, audio copied</span></th>
+                                    <td>v1.2.0</td>
+                                    <td>41.8 s</td>
+                                    <td>99.57 MB</td>
+                                    <td>4,693 kbps</td>
+                                    <td class="text-rose-400">43 ms</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-emerald-400">v1.3.0-rc5</td>
+                                    <td>42.3 s</td>
+                                    <td>99.53 MB</td>
+                                    <td>4,691 kbps</td>
+                                    <td class="text-emerald-400">none</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="2">4K, variable rate, 183 s<span class="df-sub block">110 MB, audio copied</span></th>
+                                    <td>v1.2.0</td>
+                                    <td>42.3 s</td>
+                                    <td>99.61 MB</td>
+                                    <td>4,337 kbps</td>
+                                    <td class="text-rose-400">486 ms</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-emerald-400">v1.3.0-rc5</td>
+                                    <td>42.9 s</td>
+                                    <td>99.62 MB</td>
+                                    <td>4,348 kbps</td>
+                                    <td class="text-emerald-400">none</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="2">4K, variable rate, 183 s<span class="df-sub block">20 MB, audio re-encoded</span></th>
+                                    <td>v1.2.0</td>
+                                    <td>42.2 s</td>
+                                    <td>18.51 MB</td>
+                                    <td>639 kbps</td>
+                                    <td class="text-rose-400">486 ms</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-emerald-400">v1.3.0-rc5</td>
+                                    <td>46.4 s</td>
+                                    <td>18.48 MB</td>
+                                    <td class="text-emerald-400">703 kbps (+10%)</td>
+                                    <td class="text-emerald-400">none</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <p class="df-callout mt-4">
+                    <strong>Takeaway:</strong>
+                    Keeping HDR costs almost no CPU. Converting HDR10 is 2&ndash;4 times slower (HLG more) and uses most of the CPU, so choose HEVC for HDR videos unless the viewer needs H.264. Audio is copied unless it is lossless or takes over 10% of a small target (and is above 160 kbps). Then it becomes 128 kbps AAC and the video gets the saved bits, for about 4 extra seconds on a 3-minute clip.
+                </p>
+                <div class="df-card overflow-hidden mt-4">
+                    <div class="df-card-head">
+                        <span class="df-card-title">Further reading</span>
+                        <span class="df-sub">Explainers, from the basics to tone curves</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table df-table-text">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Topic</th>
+                                    <th scope="col">Article</th>
+                                    <th scope="col">What it explains</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Video codecs</th>
+                                    <td><a href="https://github.com/leandromoreira/digital_video_introduction" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">A hands-on introduction to video technology</a><span class="df-sub block">Leandro Moreira</span></td>
+                                    <td>Builds a codec step by step, with pictures</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Gamma</th>
+                                    <td><a href="https://blog.johnnovak.net/2016/09/21/what-every-coder-should-know-about-gamma/" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">What every coder should know about gamma</a><span class="df-sub block">John Novak</span></td>
+                                    <td>Why stored numbers are not light</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR and bit depth</th>
+                                    <td><a href="https://android-developers.googleblog.com/2025/08/what-is-hdr.html" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">What is HDR?</a><span class="df-sub block">John Reck, Android Developers</span></td>
+                                    <td>Banding, gamut, PQ against HLG and common myths</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Color tags</th>
+                                    <td><a href="https://www.mux.com/blog/your-browser-and-my-browser-see-different-colors" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">Your browser and my browser see different colors</a><span class="df-sub block">Matthew Szatmary, Mux</span></td>
+                                    <td>Screenshots of missing tags changing colors</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HDR to SDR</th>
+                                    <td><a href="https://www.mpegflow.com/topics/color/hdr-to-sdr-conversion" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">HDR to SDR conversion</a><span class="df-sub block">MpegFlow</span></td>
+                                    <td>The zscale and tonemap chain, stage by stage</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Tone curves</th>
+                                    <td><a href="https://64.github.io/tonemapping/" target="_blank" rel="noopener noreferrer" class="text-cyan-300 underline hover:text-cyan-200">Tone mapping</a><span class="df-sub block">delta blog</span></td>
+                                    <td>Reinhard, Hable and ACES compared on one image</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
         <!-- SECTION: ENGINE -->
         <section id="sec-engine" class="content-section hidden-section animate-fade-in max-w-6xl mx-auto px-4 py-10">
             <div class="mb-10">
                 <h2 class="text-3xl font-bold text-white mb-4"><i class="fa-solid fa-bolt mr-3 text-violet-400"></i>Parallel Processing Engine</h2>
                 <p class="text-lg text-slate-400 leading-relaxed max-w-3xl">
-                    By dividing the video at a calculated keyframe and utilizing Python's threading to run multiple FFmpeg subprocesses simultaneously, the tool significantly reduces encoding times on modern multi-core systems and hardware encoders.
+                    By dividing the video at a calculated keyframe and utilizing Python's threading to run multiple FFmpeg subprocesses simultaneously, the tool significantly reduces encoding times on hardware encoders. CPU encoders run as one process.
                 </p>
             </div>
 
@@ -951,7 +1459,7 @@
                     </div>
                     <div class="glass-panel p-5 rounded-xl border-l-4 border-violet-500">
                         <h4 class="font-bold text-white mb-2 text-sm"><i class="fa-solid fa-film mr-2 text-violet-400"></i>Parallel Split Encoding</h4>
-                        <p class="text-xs text-slate-400">Hardware encoders execute a dual-worker parallel split pipeline with on-chip rate control and hardware lookahead for maximum speed and bitrate compliance.</p>
+                        <p class="text-xs text-slate-400">Hardware encoders execute a dual-worker parallel split pipeline with on-chip rate control, plus lookahead or pre-analysis on NVENC, AMF and QSV.</p>
                     </div>
                     <div class="glass-panel p-5 rounded-xl border-l-4 border-fuchsia-500">
                         <h4 class="font-bold text-white mb-2 text-sm"><i class="fa-solid fa-link mr-2 text-fuchsia-400"></i>Safe Concatenation</h4>
@@ -966,6 +1474,263 @@
                     </div>
                     <p class="text-xs text-slate-500 mt-4 text-center"><i class="fa-solid fa-circle-info mr-1"></i> Abstract relative duration showing multithreaded efficiency.</p>
                 </div>
+            </div>
+
+            <!-- WHICH PATH EACH INPUT TAKES -->
+            <div id="sec-engine-paths" class="df-anchor df-block">
+                <div class="df-block-head">
+                    <p class="df-eyebrow">Decision table</p>
+                    <h3 class="df-title">What runs for your video</h3>
+                    <p class="df-lead">The input codec decides where decoding runs. The color, output codec and available encoder decide everything after that. Find your input in the first table, then follow its row in the second.</p>
+                    <p class="df-sub mt-3"><span class="text-emerald-400 font-bold">GPU</span> is hardware accelerated, <span class="text-amber-300 font-bold">CPU</span> is software, <span class="text-cyan-300 font-bold">GPU or CPU</span> depends on the hardware.</p>
+                </div>
+
+                <div class="df-card overflow-hidden">
+                    <div class="df-card-head">
+                        <span class="df-card-title">1. Where the input is decoded</span>
+                        <span class="df-sub">Needs a GPU that supports the format</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Input video</th>
+                                    <th scope="col">NVIDIA<span class="df-sub block">Tested on RTX 4060</span></th>
+                                    <th scope="col">AMD and Intel<span class="df-sub block">Tested on UHD 630, Linux</span></th>
+                                    <th scope="col">Apple<span class="df-sub block">Not tested</span></th>
+                                    <th scope="col">No GPU</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">H.264<span class="df-sub block">8-bit 4:2:0</span></th>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">H.264<span class="df-sub block">10-bit or 4:2:2</span></th>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most Macs</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HEVC<span class="df-sub block">8-bit or 10-bit 4:2:0</span></th>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">HEVC<span class="df-sub block">4:2:2</span></th>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-amber-300">CPU<span class="df-sub block">On most GPUs</span></td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">Depends on the Mac</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">AV1<span class="df-sub block">8-bit or 10-bit</span></th>
+                                    <td class="text-emerald-400">GPU<span class="df-sub block">RTX 30 or newer, else CPU</span></td>
+                                    <td class="text-emerald-400">GPU<span class="df-sub block">RX 6000 or 11th Gen+, else CPU</span></td>
+                                    <td class="text-emerald-400">GPU<span class="df-sub block">M3 or newer, else CPU</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">VP9, MPEG-4<span class="df-sub block">Any depth</span></th>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="df-card overflow-hidden mt-4">
+                    <div class="df-card-head">
+                        <span class="df-card-title">2. What happens after that</span>
+                        <span class="df-sub">Scaling only runs when the target size needs it</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="df-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="text-slate-300">Input</th>
+                                    <th scope="col">Output</th>
+                                    <th scope="col">GPU encoder</th>
+                                    <th scope="col">Decode</th>
+                                    <th scope="col">Scale</th>
+                                    <th scope="col">HDR to SDR</th>
+                                    <th scope="col">Encode</th>
+                                    <th scope="col">Result</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row" rowspan="4">SDR 8-bit<span class="df-sub block">Any input codec</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="4">SDR 10-bit<span class="df-sub block">Any input codec</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit<span class="df-sub block">10-bit on NVENC if not scaled</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 10-bit on Windows<span class="df-sub block">8-bit on Linux and macOS</span></td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td>SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="4">HDR 8-bit<span class="df-sub block">HDR10 or HLG</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-emerald-400">HDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">Always CPU on VA-API</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row" rowspan="4">HDR 10-bit<span class="df-sub block">HDR10 or HLG</span></th>
+                                    <td rowspan="2">HEVC</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">See the table above</span></td>
+                                    <td class="text-emerald-400">GPU</td>
+                                    <td class="text-slate-400">None</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-emerald-400">HDR 10-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td rowspan="2">H.264</td>
+                                    <td class="text-emerald-400">Yes</td>
+                                    <td class="text-cyan-300">GPU or CPU<span class="df-sub block">Always CPU on VA-API</span></td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-emerald-400">GPU, 2 parts</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-amber-300">No</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU</td>
+                                    <td class="text-amber-300">CPU, 1 part</td>
+                                    <td class="text-amber-300">SDR 8-bit</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <p class="df-callout mt-4">
+                    <strong>The rule to remember:</strong>
+                    HDR survives only as HEVC from a GPU encoder. Every other HDR path is converted to SDR on the CPU, even when a GPU does the encoding. <a href="#sec-color-decisions" class="text-cyan-300 underline hover:text-cyan-200">See why</a>.
+                </p>
+
+                <details class="df-details df-card mt-4">
+                    <summary>Exceptions and how this was tested</summary>
+                    <div class="df-details-body space-y-3">
+                        <p><strong>Pipeline names:</strong> when decoding, scaling and encoding all run on the GPU the app calls it <span class="df-code">zero-copy</span>. CPU decoding followed by GPU work is <span class="df-code">upload</span>. On NVENC without scaling, the app can show <span class="df-code">zero-copy</span> although the CPU decoded.</p>
+                        <p><strong>Failed GPU pipeline:</strong> the app retries once with <span class="df-code">legacy</span>, which scales on the CPU except on NVENC. It does not switch to a CPU encoder, and HDR to SDR has no retry.</p>
+                        <p><strong>Very wide videos:</strong> an encode that stays wider than the GPU encoder supports fails. For most H.264 encoders that is 4,096 pixels, and some older GPUs have a similar limit for HEVC.</p>
+                        <p><strong>10-bit SDR:</strong> NVENC keeps 10-bit only for unscaled 4:2:0 HEVC, and VideoToolbox follows the decoded frames. The bundled x265 is 10-bit capable only on Windows.</p>
+                        <p><strong>4:2:2 color:</strong> output is 4:2:0, except HEVC on the CPU encoder, which keeps SDR sources in 4:2:2.</p>
+                        <p><strong>HDR detection:</strong> only the PQ and HLG transfer tags count. Untagged HDR and Dolby Vision profile 5 are treated as SDR.</p>
+                        <p><strong>Tested:</strong> 464 real encodes with the bundled FFmpeg n9.1. They cover 29 inputs (H.264, HEVC, AV1, VP9 and MPEG-4 in SDR, HDR10 and HLG), both output codecs, scaled and unscaled, on NVENC (RTX 4060, Windows), VA-API (Intel UHD 630, Linux) and both CPU encoders. AMF, QSV and VideoToolbox rows follow the code and vendor support, and were not run.</p>
+                    </div>
+                </details>
             </div>
         </section>
 
@@ -1043,7 +1808,7 @@
             <div class="mb-10 text-center">
                 <h2 class="text-3xl font-bold text-white mb-4"><i class="fa-solid fa-server mr-3 text-fuchsia-400"></i>Hardware Priority Matrix</h2>
                 <p class="text-lg text-slate-400 max-w-3xl mx-auto">
-                    The tool uses a dynamic fallback chain. It tests hardware availability with a dummy encode and selects the fastest valid encoder before falling back to CPU-based rendering. Select an OS to view its priority mapping.
+                    The tool uses a dynamic fallback chain. It tests hardware availability with a dummy encode in a fixed order and uses the first encoder that works, falling back to the CPU last. Select an OS to view its priority mapping.
                 </p>
             </div>
 

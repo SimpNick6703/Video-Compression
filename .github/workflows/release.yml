@@ -2,7 +2,8 @@ name: Build & Release
 
 on:
   release:
-    types: [created]
+    # published also fires when a draft is published; created does not.
+    types: [published]
   workflow_dispatch:
 
 # Critical: Grant write permission to upload assets to the Release
@@ -43,6 +44,22 @@ jobs:
           BUILD_VERSION: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python build.py
+
+      - name: Build Windows Installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BUILD_VERSION: ${{ github.ref_name }}
+        run: |
+          choco install innosetup -y --no-progress
+          $exe = Get-ChildItem dist -Filter "100mb-hevc-win64*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "100mb-hevc Windows executable not found in dist" }
+          # Branch names on manual runs contain '/', which is not valid in the output file name.
+          $version = $env:BUILD_VERSION.TrimStart('v') -replace '[^\w.\-]', '-'
+          # File version resources take numbers only: v1.3.0-rc1 -> 1.3.0, branch builds -> 0.0.0.
+          $numeric = if ($version -match '^\d+(\.\d+){0,3}') { $Matches[0] } else { '0.0.0' }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DNumericVersion=$numeric" "/DSourceExe=$($exe.FullName)" installer\windows.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 
       # --- Upload Section ---
 

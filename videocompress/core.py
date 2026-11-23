@@ -7,13 +7,14 @@ import subprocess
 import os
 import math
 import json
+import re
 import logging
 import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import Tuple, Optional, List, Sequence, Mapping
 
-from videocompress.hwpipeline import Tier, backend_for_encoder, build_video_args
+from videocompress.hwpipeline import HdrSource, Tier, backend_for_encoder, build_video_args, hdr_handling
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +22,11 @@ log = logging.getLogger(__name__)
 MB_TO_BYTES = 1024 * 1024
 MB_TO_BITS = 8 * 1024 * 1024
 BITRATE_SAFETY_FACTOR = 0.90
+LOSSLESS_AUDIO_CODECS = ("flac", "alac", "truehd", "mlp", "wavpack", "tta", "ape")
+AUDIO_REENCODE_KBPS = 128
+AUDIO_REENCODE_MIN_KBPS = 160  # at or below this, 128k saves too little to be worth the time
+AUDIO_MAX_TARGET_SHARE = 0.10
+AUDIO_SAMPLE_S = 30
 MIN_BPP = 0.04  # Target Bits Per Pixel threshold
 LOG_FILES_TO_CLEAN = ["ffmpeg2pass.log", "ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"]
 
@@ -31,6 +37,8 @@ VENDOR_PRIORITY = {"0x1002": 0, "0x8086": 1}
 VAAPI_NODE_TIMEOUT_S = 10
 PIPELINE_PROBE_TIMEOUT_S = 20
 PIPELINE_PROBE_TIERS = (Tier.ZERO_COPY, Tier.UPLOAD)
+HDR_TRANSFERS = ("smpte2084", "arib-std-b67")
+UNTAGGED_COLOR = ("", "unknown", "reserved")
 
 ENCODER_PRIORITY = {
     "hevc": {
@@ -221,7 +229,7 @@ def calculate_video_bitrate(target_mb: float, duration: float, audio_kbps: int) 
     Args:
         target_mb: Desired target file size in megabytes.
         duration: Video duration in seconds.
-        audio_kbps: Probed audio bitrate in kbps.
+        audio_kbps: Audio bitrate of the output in kbps.
 
     Returns:
         Target video bitrate in kbps (integer).
@@ -241,7 +249,7 @@ def calculate_split_bitrates(target_mb: float, durations: Sequence[float], audio
     Args:
         target_mb: Total desired target file size in megabytes.
         durations: Sequence of segment durations in seconds.
-        audio_kbps: Probed audio bitrate in kbps.
+        audio_kbps: Audio bitrate of the output in kbps.
 
     Returns:
         List of target video bitrates in kbps for each segment.
@@ -483,9 +491,126 @@ def check_audio_encoder_available(encoder_name: str = "aac") -> bool:
             text=True,
             env=get_clean_env(),
         )
-        return f"A..... {encoder_name}" in res.stdout or f"A...D. {encoder_name}" in res.stdout
+        # Rows are "<flags> <name> <description>"; the flag layout differs between FFmpeg versions.
+        return any(
+            len(parts) >= 2 and parts[0].startswith("A") and parts[1] == encoder_name
+            for parts in (line.split() for line in res.stdout.splitlines())
+        )
     except (subprocess.SubprocessError, OSError):
         return False
+
+
+def check_audio_decoder_available(codec_name: str) -> bool:
+    """Check if the active FFmpeg binary can decode an audio codec.
+
+    Args:
+        codec_name: Codec name as ffprobe reports it (e.g., `flac`).
+
+    Returns:
+        True if `ffmpeg -codecs` lists the codec as decodable, else False.
+
+    Example:
+        >>> check_audio_decoder_available("not-a-codec")
+        False
+    """
+    try:
+        res = subprocess.run(
+            [get_resource_path("ffmpeg"), "-hide_banner", "-codecs"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=get_clean_env(),
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        log.debug("Codec listing failed: %s", e)
+        return False
+    return any(
+        len(parts) >= 2 and parts[0].startswith("D") and parts[1] == codec_name
+        for parts in (line.split() for line in res.stdout.splitlines())
+    )
+
+
+def plan_audio(codec_name: str, source_kbps: int, target_mb: float, duration: float) -> Tuple[int, bool]:
+    """Decide between copying and re-encoding the audio.
+
+    Audio is copied unless it is lossless, or is above 160 kbps and would take
+    more than 10% of the target. Audio FFmpeg cannot decode is always copied.
+
+    Args:
+        codec_name: Source audio codec.
+        source_kbps: Source audio bitrate in kbps (0 for silent video).
+        target_mb: Target file size in megabytes.
+        duration: Video duration in seconds.
+
+    Returns:
+        (audio bitrate of the output in kbps, whether to re-encode).
+
+    Example:
+        >>> plan_audio("aac", 192, target_mb=110, duration=183)
+        (192, False)
+    """
+    if not source_kbps:
+        return 0, False
+    lossless = codec_name.startswith("pcm_") or codec_name in LOSSLESS_AUDIO_CODECS
+    over_budget = (
+        source_kbps > AUDIO_REENCODE_MIN_KBPS
+        and source_kbps * 1000 * duration > AUDIO_MAX_TARGET_SHARE * target_mb * MB_TO_BITS
+    )
+    if (
+        (lossless or over_budget)
+        and check_audio_encoder_available("aac")
+        and check_audio_decoder_available(codec_name)
+    ):
+        return AUDIO_REENCODE_KBPS, True
+    return source_kbps, False
+
+
+def estimate_bitrate(packets: Sequence[Tuple[float, int]]) -> int:
+    """Estimate a bitrate in bits per second from (timestamp, size) packets.
+
+    Args:
+        packets: Timestamps in seconds with packet sizes in bytes.
+
+    Returns:
+        Bits per second, or 0 when the packets span no time.
+
+    Example:
+        >>> estimate_bitrate([(0.0, 1000), (1.0, 1000)])
+        8000
+    """
+    ordered = sorted(packets)
+    span = ordered[-1][0] - ordered[0][0] if ordered else 0.0
+    if span <= 0:
+        return 0
+    # The last packet's duration lies outside the span, so its size is left out.
+    return round(sum(size for _, size in ordered[:-1]) * 8 / span)
+
+
+def measure_audio_bitrate(input_path: str) -> int:
+    """Measure the first audio track's bitrate, for files that don't report one (MKV, WebM).
+
+    Args:
+        input_path: Path to the input media file.
+
+    Returns:
+        Bits per second, or 0 if it can't be measured.
+
+    Example:
+        >>> measure_audio_bitrate("missing.mkv")
+        0
+    """
+    # shortcut: samples the first 30 s, read the whole track if VBR audio causes overshoot.
+    cmd = [
+        get_resource_path("ffprobe"), "-v", "error", "-read_intervals", f"%+{AUDIO_SAMPLE_S}",
+        "-select_streams", "a:0", "-show_entries", "packet=pts_time,size", "-of", "json", input_path,
+    ]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env())
+        packets = [(float(p["pts_time"]), int(p["size"])) for p in json.loads(out)["packets"] if "pts_time" in p]
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError) as e:
+        log.debug("Audio bitrate measurement failed: %r", e)
+        return 0
+    return estimate_bitrate(packets)
 
 
 @lru_cache(maxsize=4)
@@ -517,8 +642,75 @@ def check_bsf_available(bsf_name: str) -> bool:
     return bsf_name in (line.strip() for line in res.stdout.splitlines())
 
 
-def build_concat_cmd(ffmpeg_exe: str, list_path: str, output_path: str, annexb_available: bool) -> List[str]:
-    """Build the stream-copy command that stitches split segments.
+def build_audio_args(audio_kbps: int, input_index: int = 0, reencode: bool = False) -> List[str]:
+    """Build the audio mapping and codec arguments for an output.
+
+    Args:
+        audio_kbps: Audio bitrate of the output in kbps (0 for silent video, which drops audio).
+        input_index: FFmpeg input number that carries the source audio.
+        reencode: Re-encode to stereo AAC instead of copying (see `plan_audio`).
+
+    Returns:
+        Arguments to append to an FFmpeg output.
+
+    Example:
+        >>> build_audio_args(0)
+        ['-an']
+        >>> build_audio_args(128, input_index=1)
+        ['-map', '1:a:0?', '-c:a', 'copy']
+    """
+    if audio_kbps == 0:
+        return ["-an"]
+    if reencode:
+        codec = ["-c:a", "aac", "-b:a", f"{audio_kbps}k", "-ac", "2"]
+    else:
+        codec = ["-c:a", "copy"]
+    return ["-map", f"{input_index}:a:0?", *codec]
+
+
+def build_concat_list(first_path: str, second_path: str, split_time: float) -> str:
+    """Build the concat demuxer list for the two split segments.
+
+    The first segment's length is stated as the split time. Its reported
+    duration also counts its start offset (the encoder's reorder delay, which
+    grows with the duration of the first source frame), so when the two
+    segments start at different offsets the second one would otherwise be
+    placed late or early, leaving a gap or overlap at the split.
+
+    Args:
+        first_path: Segment covering 0 to the split time.
+        second_path: Segment covering the split time to the end.
+        split_time: Split timestamp in seconds.
+
+    Returns:
+        The list file contents.
+
+    Example:
+        >>> build_concat_list("a.mp4", "b.mp4", 1.5)
+        "file 'a.mp4'\\nduration 1.500000\\nfile 'b.mp4'\\n"
+    """
+    def quoted(path: str) -> str:
+        # Inside quotes, the concat demuxer only needs ' itself escaped: close, \', reopen.
+        return "'" + path.replace("'", "'\\''") + "'"
+
+    return f"file {quoted(first_path)}\nduration {split_time:.6f}\nfile {quoted(second_path)}\n"
+
+
+def build_concat_cmd(
+    ffmpeg_exe: str,
+    list_path: str,
+    output_path: str,
+    annexb_available: bool,
+    source_path: str,
+    audio_kbps: int,
+    reencode_audio: bool = False,
+) -> List[str]:
+    """Build the command that stitches video-only split segments and adds the source audio.
+
+    Segments are encoded without audio and the audio track is taken from the
+    source in one piece. Audio cut per segment ends on its own packet boundary,
+    which made the first segment longer than its video and opened a gap in the
+    video at the split.
 
     The concat demuxer converts H.264 through `h264_mp4toannexb`, which also
     tolerates differing parameter sets between segments. When the binary lacks
@@ -529,30 +721,76 @@ def build_concat_cmd(ffmpeg_exe: str, list_path: str, output_path: str, annexb_a
         list_path: Concat list file naming the segments in order.
         output_path: Destination video path.
         annexb_available: Whether `h264_mp4toannexb` exists in the binary.
+        source_path: Original input video, used for its audio track.
+        audio_kbps: Audio bitrate of the output in kbps (0 for silent video).
+        reencode_audio: Re-encode the audio instead of copying it.
 
     Returns:
         A command list ready for subprocess execution.
 
     Example:
-        >>> build_concat_cmd("ffmpeg", "list.txt", "out.mp4", annexb_available=False)[6:9]
+        >>> build_concat_cmd("ffmpeg", "list.txt", "out.mp4", False, "in.mp4", 0)[6:9]
         ['-safe', '0', '-auto_convert']
     """
     convert_args = [] if annexb_available else ["-auto_convert", "0"]
     return [
         ffmpeg_exe, "-hide_banner", "-v", "error",
         "-f", "concat", "-safe", "0", *convert_args, "-i", list_path,
-        "-c", "copy", "-movflags", "+faststart", "-y", output_path,
+        "-i", source_path, "-map", "0:v:0", *build_audio_args(audio_kbps, input_index=1, reencode=reencode_audio),
+        "-c:v", "copy", "-movflags", "+faststart", "-y", output_path,
     ]
 
 
-def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int]]:
+LOADER_ERROR_MARKER = "error while loading shared libraries"
+RUNTIME_LIBRARY_HINT = (
+    "Install the VA-API runtime libraries and try again:\n"
+    "  Debian/Ubuntu: sudo apt install libva2 libva-drm2 libdrm2\n"
+    "  Fedora:        sudo dnf install libva libdrm\n"
+    "  Arch:          sudo pacman -S libva libdrm\n"
+    "  openSUSE:      sudo zypper install libva2 libva-drm2 libdrm2"
+)
+
+
+def find_missing_runtime_library(ffprobe_exe: str) -> Optional[str]:
+    """Return a user-facing message when FFmpeg cannot start for lack of a system library.
+
+    The Linux FFmpeg build links the VA-API libraries dynamically, so on systems
+    without them every FFmpeg call fails in the dynamic loader before it runs.
+
+    Args:
+        ffprobe_exe: Path to the ffprobe executable (linked like ffmpeg).
+
+    Returns:
+        The message naming the missing library with install commands, or None.
+
+    Example:
+        >>> find_missing_runtime_library("/nonexistent/ffprobe") is None
+        True
+    """
+    try:
+        res = subprocess.run(
+            [ffprobe_exe, "-version"], capture_output=True, text=True, timeout=10, env=get_clean_env(),
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.debug("ffprobe start check skipped: %s", e)
+        return None
+    stderr = res.stderr or ""
+    if res.returncode == 0 or LOADER_ERROR_MARKER not in stderr:
+        return None
+    detail = stderr.split(LOADER_ERROR_MARKER, 1)[1].strip(": \n").split(":", 1)[0]
+    log.error("FFmpeg cannot start: %s", stderr.strip())
+    return f"FFmpeg cannot start: missing system library {detail}.\n{RUNTIME_LIBRARY_HINT}"
+
+
+def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, int, int, str]]:
     """Probe video metadata.
 
     Args:
         input_path: Path to the input media file.
 
     Returns:
-        Tuple of (duration_seconds, file_size_bytes, fps, audio_kbps, width, height), or None on failure.
+        Tuple of (duration_seconds, file_size_bytes, fps, audio_kbps, width, height, audio_codec),
+        or None on failure.
     """
     ffprobe_exe = get_resource_path("ffprobe")
     clean_env = get_clean_env()
@@ -581,23 +819,25 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
         # Audio probe: verify stream presence first to avoid phantom bitrate reservation
         cmd_aud = [
             ffprobe_exe, "-v", "error", "-select_streams", "a:0",
-            "-show_entries", "stream=bit_rate", "-of", "json", input_path
+            "-show_entries", "stream=bit_rate,codec_name", "-of", "json", input_path
         ]
         audio_bps = 0
+        audio_codec = ""
         try:
             aud_res = json.loads(subprocess.check_output(cmd_aud, text=True, env=clean_env))
             aud_streams = aud_res.get('streams', [])
             if aud_streams:
+                audio_codec = aud_streams[0].get('codec_name', '')
                 raw_br = aud_streams[0].get('bit_rate')
                 if raw_br and str(raw_br).isdigit():
                     audio_bps = int(raw_br)
                 else:
-                    audio_bps = 128000  # Default fallback if bitrate is VBR/unspecified
+                    audio_bps = measure_audio_bitrate(input_path) or 128000  # fallback if it can't be measured
         except (subprocess.CalledProcessError, ValueError, OSError, KeyError, IndexError):
             audio_bps = 0
 
         audio_kbps = math.ceil(audio_bps / 1000) if audio_bps > 0 else 0
-        info = (float(dur_out), get_file_size(input_path), fps, audio_kbps, width, height)
+        info = (float(dur_out), get_file_size(input_path), fps, audio_kbps, width, height, audio_codec)
         log.debug(
             "Input: %dx%d @ %.3f fps, %.2f s, %d bytes, audio %d kbps",
             width, height, fps, info[0], info[1], audio_kbps,
@@ -609,6 +849,76 @@ def get_video_info(input_path: str) -> Optional[Tuple[float, int, float, int, in
     except (ValueError, OSError, KeyError, IndexError) as e:
         log.error("Could not read video metadata from %s: %r", input_path, e)
         return None
+
+
+def get_hdr_source(input_path: str) -> Optional[HdrSource]:
+    """Return the HDR transfer and bit depth of the first video stream, or None for SDR.
+
+    Only PQ (`smpte2084`, HDR10) and HLG (`arib-std-b67`) count as HDR; BT.2020
+    primaries alone do not.
+
+    Example:
+        >>> get_hdr_source("sdr.mp4") is None  # doctest: +SKIP
+        True
+    """
+    cmd = [
+        get_resource_path("ffprobe"), "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=color_transfer,pix_fmt,color_primaries,color_space", "-of", "json", input_path,
+    ]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env())
+        stream = json.loads(out)["streams"][0]
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError, IndexError) as e:
+        log.debug("Could not read color transfer: %r", e)
+        return None
+    transfer = stream.get("color_transfer", "")
+    if transfer not in HDR_TRANSFERS:
+        return None
+    tags = read_first_frame_color(input_path) or stream
+    return HdrSource(
+        transfer,
+        is_high_bit_depth(stream.get("pix_fmt", "")),
+        has_transfer=tags.get("color_transfer", "") not in UNTAGGED_COLOR,
+        has_primaries=tags.get("color_primaries", "") not in UNTAGGED_COLOR,
+        has_matrix=tags.get("color_space", "") not in UNTAGGED_COLOR,
+    )
+
+
+def read_first_frame_color(input_path: str) -> Optional[Mapping[str, str]]:
+    """Return the first decoded frame's colour tags, which are what FFmpeg filters see.
+
+    The stream entry can show the container's tags while the frames have none.
+
+    Args:
+        input_path: Path to the input media file.
+
+    Returns:
+        The frame's fields, or None if no frame could be decoded.
+
+    Example:
+        >>> read_first_frame_color("missing.mp4") is None
+        True
+    """
+    cmd = [
+        get_resource_path("ffprobe"), "-v", "error", "-read_intervals", "%+#1", "-select_streams", "v:0",
+        "-show_entries", "frame=color_transfer,color_primaries,color_space", "-of", "json", input_path,
+    ]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE, env=get_clean_env())
+        return json.loads(out)["frames"][0]
+    except (subprocess.CalledProcessError, OSError, ValueError, KeyError, IndexError) as e:
+        log.debug("Could not read the first frame's colour tags: %r", e)
+        return None
+
+
+def is_high_bit_depth(pix_fmt: str) -> bool:
+    """Return True for pixel formats with more than 8 bits per sample.
+
+    Example:
+        >>> is_high_bit_depth("yuv420p10le"), is_high_bit_depth("p010le"), is_high_bit_depth("yuvj420p")
+        (True, True, False)
+    """
+    return bool(re.search(r"p1[0246]|1[0246](le|be)$", pix_fmt))
 
 
 def get_smart_split_point(input_path: str, duration: float) -> float:
@@ -742,8 +1052,10 @@ def build_single_pass_cmd(
     tgt_h: int,
     tgt_fps: float,
     audio_kbps: int = 128,
+    reencode_audio: bool = False,
     tier: Tier = Tier.LEGACY,
     vaapi_node: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> List[str]:
     """Build a single-pass FFmpeg command for hardware encoders.
 
@@ -760,9 +1072,11 @@ def build_single_pass_cmd(
         output_path: Destination video path.
         tgt_h: Target height for scaling. Set to 0 or equal to src_h to skip scaling.
         tgt_fps: Target frames per second. Set equal to src_fps to skip FPS conversion.
-        audio_kbps: Probed audio bitrate in kbps (0 for silent video).
+        audio_kbps: Audio bitrate of the output in kbps (0 for silent video).
+        reencode_audio: Re-encode the audio instead of copying it.
         tier: Hardware pipeline tier; LEGACY reproduces the pre-v1.2 arguments.
         vaapi_node: Optional VA-API render node (e.g., `/dev/dri/renderD128`).
+        hdr: HDR properties of the source, else None.
 
     Returns:
         A command list ready for subprocess execution.
@@ -773,7 +1087,7 @@ def build_single_pass_cmd(
         True
     """
     video = build_video_args(
-        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node
+        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node, hdr
     )
     cmd: List[str] = [ffmpeg_exe, "-y", *video.pre_input]
 
@@ -833,15 +1147,7 @@ def build_single_pass_cmd(
     # Stream mapping
     cmd.extend(["-map", "0:v:0"])
 
-    # Audio Handling
-    if audio_kbps == 0:
-        cmd.append("-an")
-    else:
-        cmd.extend(["-map", "0:a:0?"])
-        if audio_kbps > 160 and check_audio_encoder_available("aac"):
-            cmd.extend(["-c:a", "aac", "-b:a", "128k", "-ac", "2"])
-        else:
-            cmd.extend(["-c:a", "copy"])
+    cmd.extend(build_audio_args(audio_kbps, reencode=reencode_audio))
 
     # Single-pipe progress streaming on stderr
     cmd.extend([
@@ -868,6 +1174,7 @@ def build_probe_cmd(
     src_fps: float,
     tgt_fps: float,
     vaapi_node: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> List[str]:
     """Build a one-second null-output encode of the real input for one tier.
 
@@ -882,6 +1189,7 @@ def build_probe_cmd(
         src_fps: Source frames per second.
         tgt_fps: Target frames per second.
         vaapi_node: Optional VA-API render node.
+        hdr: HDR properties of the source, else None.
 
     Returns:
         A command list ready for subprocess execution.
@@ -892,7 +1200,7 @@ def build_probe_cmd(
         '1'
     """
     video = build_video_args(
-        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node
+        backend_for_encoder(encoder), tier, src_h, tgt_h, src_fps, tgt_fps, codec_type, vaapi_node, hdr
     )
     cmd: List[str] = [ffmpeg_exe, "-hide_banner", "-v", "error", *video.pre_input]
     cmd.extend(["-t", "1", "-i", input_path, *video.post_input])
@@ -912,6 +1220,7 @@ def probe_pipeline_tier(
     src_fps: float,
     tgt_fps: float,
     vaapi_node: Optional[str] = None,
+    hdr: Optional[HdrSource] = None,
 ) -> Tier:
     """Select the most GPU-resident pipeline tier that works on the real input.
 
@@ -928,6 +1237,8 @@ def probe_pipeline_tier(
         src_fps: Source frames per second.
         tgt_fps: Target frames per second.
         vaapi_node: Optional VA-API render node.
+        hdr: HDR properties of the source, else None. Tone-mapped
+            sources always use LEGACY (the tone mapping runs on the CPU).
 
     Returns:
         The first tier whose probe encode succeeds, else `Tier.LEGACY`.
@@ -936,12 +1247,13 @@ def probe_pipeline_tier(
         >>> probe_pipeline_tier("ffmpeg", "in.mp4", "libx265", "hevc", 1080, 720, 60.0, 30.0)
         <Tier.LEGACY: 'legacy'>
     """
-    if backend_for_encoder(encoder) is None:
+    backend = backend_for_encoder(encoder)
+    if backend is None or hdr_handling(backend, codec_type, hdr) == "tonemap":
         return Tier.LEGACY
     for tier in PIPELINE_PROBE_TIERS:
         cmd = build_probe_cmd(
             ffmpeg_exe, input_path, encoder, codec_type, tier,
-            src_h, tgt_h, src_fps, tgt_fps, vaapi_node,
+            src_h, tgt_h, src_fps, tgt_fps, vaapi_node, hdr,
         )
         if _run_probe(cmd, PIPELINE_PROBE_TIMEOUT_S, f"{encoder} {tier.label} pipeline"):
             log.debug("Pipeline tier: %s", tier.label)
