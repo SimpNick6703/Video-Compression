@@ -175,6 +175,8 @@ ruff check --fix .                          # apply the safe automatic fixes
 | `test_runtime_libs.py` | The message for missing Linux system libraries |
 | `test_notices.py` | License notices shipped next to the executables |
 | `test_tables.py` | Rounded tables and panels, including in legacy Windows consoles |
+| `test_cancel.py` | Ctrl+C exits with 130 and removes the partial output |
+| `test_cli_args.py` | Sizes, codecs and file names on the command line, whatever is in the current folder |
 | `test_diagnostics.py` | In-memory run log and the failure-only error log file |
 | `test_version.py` | Version embedding in executables and FFmpeg release selection |
 
