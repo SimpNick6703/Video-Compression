@@ -495,7 +495,7 @@ def build_video_args(
         'fps=30.0,scale_vaapi=w=-2:h=720:format=nv12'
     """
     handling = hdr_handling(backend, codec_type, hdr)
-    if handling == "tonemap":
+    if handling == "tonemap" and hdr is not None:
         return _tonemap_args(backend, vaapi_node, src_h, tgt_h, src_fps, tgt_fps, hdr)
     ten_bit = handling == "keep" and hdr is not None and hdr.ten_bit
 
