@@ -144,3 +144,18 @@ def test_compress_video_retries_with_legacy_end_to_end(
     ok, result = encode.compress_video(str(source), str(output), 100.0, "hevc")
     assert ok and result == str(output)
     assert tiers == [Tier.ZERO_COPY, Tier.LEGACY]
+
+
+def test_small_input_skips_audio_and_hdr_probes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    source = tmp_path / "in.mp4"
+    source.write_bytes(b"x")
+
+    def must_not_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("probed a file that is already under the target")
+
+    monkeypatch.setattr(encode, "find_missing_runtime_library", lambda p: None)
+    monkeypatch.setattr(encode, "get_video_info", lambda p: (10.0, 5 * 1024 * 1024, 60.0, 128, 1920, 1080, "aac"))
+    monkeypatch.setattr(encode, "plan_audio", must_not_run)
+    monkeypatch.setattr(encode, "get_hdr_source", must_not_run)
+    ok, result = encode.compress_video(str(source), None, 20.0, "hevc")
+    assert not ok and result.startswith("Already smaller than target")

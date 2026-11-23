@@ -395,6 +395,9 @@ def compress_video(
     if not info:
         return False, f"Failed to extract video info from: {input_path}"
     duration, orig_bytes, fps, source_audio_kbps, src_w, src_h, audio_codec = info
+    if (orig_bytes / MB_TO_BYTES) <= target_size_mb:
+        return False, f"Already smaller than target: {orig_bytes / MB_TO_BYTES:.2f} MB <= {target_size_mb} MB"
+
     audio_kbps, reencode_audio = plan_audio(audio_codec, source_audio_kbps, target_size_mb, duration)
     log.debug(
         "Audio: %s %d kbps -> %s at %d kbps",
@@ -402,9 +405,6 @@ def compress_video(
     )
     hdr = get_hdr_source(input_path)
     log.debug("HDR source: %s", hdr or "none (SDR)")
-
-    if (orig_bytes / MB_TO_BYTES) <= target_size_mb:
-        return False, f"Already smaller than target: {orig_bytes / MB_TO_BYTES:.2f} MB <= {target_size_mb} MB"
 
     if output_path is None:
         input_p = Path(input_path)
