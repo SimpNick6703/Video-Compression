@@ -8,8 +8,9 @@
 ; (Shift + right-click, or "Show more options" on Windows 11); the modern
 ; Windows 11 menu needs a signed package and is not used.
 ;
-; Codec: asked on a wizard page; silent installs (WinGet) use HEVC unless
-; `/CODEC=h264` is passed. Reinstall to change it.
+; Codec: asked on a wizard page, which starts on the previous install's choice.
+; Silent installs (WinGet) keep that choice, or use HEVC on a first install,
+; unless `/CODEC=hevc` or `/CODEC=h264` is passed. Reinstall to change it.
 
 #ifndef AppVersion
   #error Pass /DAppVersion=<version>
@@ -132,7 +133,8 @@ begin
     True, False);
   CodecPage.Add('HEVC (H.265), recommended');
   CodecPage.Add('H.264');
-  if CompareText(ExpandConstant('{param:CODEC|hevc}'), 'h264') = 0 then
+  { /CODEC wins, then the choice stored by the previous install (kept in its uninstall key). }
+  if CompareText(ExpandConstant('{param:CODEC|' + GetPreviousData('Codec', 'hevc') + '}'), 'h264') = 0 then
     CodecPage.SelectedValueIndex := 1
   else
     CodecPage.SelectedValueIndex := 0;
@@ -145,4 +147,9 @@ begin
     Result := 'h264'
   else
     Result := 'hevc';
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'Codec', GetCodec(''));
 end;
